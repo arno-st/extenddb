@@ -1,0 +1,32 @@
+/*******************************************************************************
+
+    Author ......... Arno Streuli
+    Contact ........ astreuli@gmail.com
+    Home Site ...... http://cactiusers.org
+    Program ........ DB extention for Cacti
+    Purpose ........ Add field to the default Cacti DB
+
+*******************************************************************************/
+
+----[ Purpose
+
+	This plugin Add some column to the default DB, mainly used by linkdiscovery
+
+----[ Installation
+
+	To install the plugin, please refer to the Plugin Installation Documentation
+
+    
+----[ Possible Bugs?
+   
+	If you find a problem, let me know!!! http://bugs.cacti.net
+
+----[ Future Changes
+
+	Got any ideas or complaints, please e-mail me!
+
+----[ Changelog
+
+1.0 added the serial number (serial_no) and type of host
+1.1.1 added the parsing of any new device if the field type, and serial nuimber is not filled
+
