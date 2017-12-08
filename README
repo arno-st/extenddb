@@ -28,5 +28,5 @@
 ----[ Changelog
 
 1.0 added the serial number (serial_no) and type of host
-1.1.1 added the parsing of any new device if the field type, and serial nuimber is not filled
-
+1.1.1 added the parsing of any new device if the field type, and serial number is not filled
+1.1.2 added a flag for phone (isPhone)

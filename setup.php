@@ -33,7 +33,7 @@ function plugin_extenddb_uninstall () {
 	// Do any extra Uninstall stuff here
 
 	// Remove items from the settings table
-	db_execute('ALTER TABLE host DROP COLUMN serial_no, DROP COLUMN type');
+	db_execute('ALTER TABLE host DROP COLUMN serial_no, DROP COLUMN type, DROP COLUMN isPhone');
 }
 
 function plugin_extenddb_check_config () {
@@ -69,6 +69,9 @@ function extenddb_check_upgrade() {
 			api_plugin_db_add_column ('extenddb', 'host', array('name' => 'serial_no', 'type' => 'char(20)', 'NULL' => false, 'default' => ''));
 			api_plugin_db_add_column ('extenddb', 'host', array('name' => 'type', 'type' => 'char(50)', 'NULL' => false, 'default' => ''));
 		}
+		if( $old < '1.1.2' ) {
+			api_plugin_db_add_column ('extenddb', 'host', array('name' => 'isPhone', 'type' => 'char(2)', 'NULL' => false, 'default' => ''));
+		}
 
 	}
 }
@@ -102,6 +105,13 @@ function extenddb_config_form () {
 				'value' => '|arg1:type|',
 				'default' => '',
 			);
+			$fields_host_edit3['isPhone'] = array(
+				'friendly_name' => 'isPhone',
+				'description' => 'Is it a phone ?',
+				'method' => 'checkbox',
+				'value' => '|arg1:isPhone|',
+				'default' => '',
+			);
 		}
 	}
 	$fields_host_edit = $fields_host_edit3;
@@ -129,6 +139,16 @@ function extenddb_api_device_new ($save) {
 		}
 	} else {
 		$save['type'] = parseDevice($save, $snmptype );
+	}
+
+	if( isset($_POST['isPhone']) ){
+		if ( empty($_POST['isPhone']) ) {
+			$save['isPhone'] = false;
+		} else {
+			$save['isPhone'] = form_input_validate($_POST['isPhone'], 'isPhone', '', true, 3);
+		}
+	} else {
+		$save['isPhone'] = false;
 	}
 	return $save;
 }
