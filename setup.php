@@ -69,7 +69,7 @@ function extenddb_check_upgrade() {
 			WHERE directory='" . $version['name'] . "' ");
 
 		if( $old < '1.1' ) {
-			api_plugin_db_add_column ('extenddb', 'host', array('name' => 'serial_no', 'type' => 'char(20)', 'NULL' => true, 'default' => ''));
+			api_plugin_db_add_column ('extenddb', 'host', array('name' => 'serial_no', 'type' => 'char(50)', 'NULL' => true, 'default' => ''));
 			api_plugin_db_add_column ('extenddb', 'host', array('name' => 'type', 'type' => 'char(50)', 'NULL' => true, 'default' => ''));
 		}
 		if( $old < '1.1.2' ) {
