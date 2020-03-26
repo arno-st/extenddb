@@ -29,6 +29,11 @@ function plugin_extenddb_install () {
 	api_plugin_register_hook('extenddb', 'utilities_action', 'extenddb_utilities_action', 'setup.php');
 	api_plugin_register_hook('extenddb', 'utilities_list', 'extenddb_utilities_list', 'setup.php');
 
+// Device action
+    api_plugin_register_hook('extenddb', 'device_action_array', 'extenddb_device_action_array', 'setup.php');
+    api_plugin_register_hook('extenddb', 'device_action_execute', 'extenddb_device_action_execute', 'setup.php');
+    api_plugin_register_hook('extenddb', 'device_action_prepare', 'extenddb_device_action_prepare', 'setup.php');
+
 }
 
 function plugin_extenddb_uninstall () {
@@ -75,10 +80,16 @@ function extenddb_check_upgrade() {
 		if( $old < '1.1.2' ) {
 			api_plugin_db_add_column ('extenddb', 'host', array('name' => 'isPhone', 'type' => 'char(2)', 'NULL' => true, 'default' => ''));
 		}
-	if( $old < '1.2.1' ) {
+		if( $old < '1.2.1' ) {
 			api_plugin_db_add_column ('extenddb', 'host', array('name' => 'SysObjId', 'type' => 'char(50)', 'NULL' => true, 'default' => ''));
 		}
 
+		if( $old < '1.2.3' ) {
+// Device action
+   	 		api_plugin_register_hook('extenddb', 'device_action_array', 'extenddb_device_action_array', 'setup.php');
+    		api_plugin_register_hook('extenddb', 'device_action_execute', 'extenddb_device_action_execute', 'setup.php');
+    		api_plugin_register_hook('extenddb', 'device_action_prepare', 'extenddb_device_action_prepare', 'setup.php');
+		}
 	}
 }
 
@@ -151,7 +162,7 @@ function extenddb_utilities_action ($action) {
 	$dbquery = db_fetch_assoc("SELECT  * FROM host WHERE serial_no is NULL OR SysObjId IS NULL OR serial_no = '' OR SysObjId = '' ORDER BY id");
 	if ( ($dbquery > 0) && $action == 'extenddb_rebuild' ){
 		if ($action == 'extenddb_rebuild') {
-		// Upgrade the map address table
+		// Upgrade the extenddb value
 			foreach ($dbquery as $host) {
 				extenddb_api_device_new( $host );
 			}
@@ -163,7 +174,7 @@ function extenddb_utilities_action ($action) {
 	return $action;
 }
 
-function extenddb_api_device_new ($hostrecord_array) {
+function extenddb_api_device_new($hostrecord_array) {
 
 	$snmpsysobjid		 = ".1.3.6.1.2.1.1.2.0"; // return Cisco OID type
 
@@ -183,15 +194,40 @@ extdb_log("recu: ". $hostrecord_array['description'] );
 extdb_log("SysObjId: ". $searchtype );
 		return $hostrecord_array;
 	}
+/*
+form_input_validate - validates the value of a form field and Takes the appropriate action if the input
+     is not valid
+   @arg $field_value - the value of the form field
+   @arg $field_name - the name of the $_POST field as specified in the HTML
+   @arg $regexp_match - (optionally) enter a regular expression to match the value against
+   @arg $allow_nulls - (bool) whether to allow an empty string as a value or not
+   @arg $custom_message - (int) the ID of the message to raise upon an error which is defined in the
+     $messages array in 'include/global_arrays.php'
+   @returns - the original $field_value */
+*/
+	if (isset($_POST['SysObjId']))
+		$hostrecord_array['SysObjId'] = form_input_validate($_POST['SysObjId'], 'SysObjId', '', true, 3);
+	else {
+		$host_extend_record['SysObjId'] = trim( substr($searchtype, strpos( $searchtype, ':' )+1) );
+		$hostrecord_array['SysObjId'] = form_input_validate($host_extend_record['SysObjId'], 'SysObjId', '', true, 3);
+	}
+	
+	if (isset($_POST['serial_no']))
+		$hostrecord_array['serial_no'] = form_input_validate($_POST['serial_no'], 'serial_no', '', true, 3);
+	else {
+		$host_extend_record['serial_no'] = getSN( $hostrecord_array, $host_extend_record['SysObjId'] );
+		$hostrecord_array['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
+	}
+	
+	if (isset($_POST['type']))
+		$hostrecord_array['type'] = form_input_validate($_POST['type'], 'type', '', true, 3);
+	else
+		$hostrecord_array['type'] = form_input_validate('', 'type', '', true, 3);
 
-	// find and store device SysObjId
-	$hostrecord_array['SysObjId'] = trim( substr($searchtype, strpos( $searchtype, ':' )+1) );
-	db_execute("update host set SysObjId='".$hostrecord_array['SysObjId']. "' where id=" . $hostrecord_array['id'] );
-
-
-	// find and store Serial Number 
-	$hostrecord_array['serial_no'] = getSN( $hostrecord_array, $hostrecord_array['SysObjId'] );
-	db_execute("update host set serial_no='".$hostrecord_array['serial_no']. "' where id=" . $hostrecord_array['id'] );
+	if (isset($_POST['isPhone']))
+		$hostrecord_array['isPhone'] = form_input_validate($_POST['isPhone'], 'isPhone', '', true, 3);
+	else
+		$hostrecord_array['isPhone'] = form_input_validate('', 'isPhone', '', true, 3);
 
 	return $hostrecord_array;
 }
@@ -286,8 +322,57 @@ function getSN( $hostrecord_array, $SysObjId ){
 	return $serialno;
 }
 
+function extenddb_device_action_array($device_action_array) {
+        $device_action_array['fill_extenddb'] = __('Scan for type and Serial');
+
+        return $device_action_array;
+}
 function extdb_log( $text ){
     cacti_log( $text, false, "EXTENDDB" );
+}
+
+function extenddb_device_action_execute($action) {
+        global $config;
+
+        if ($action != 'fill_extenddb' ) {
+                return $action;
+        }
+
+        $selected_items = sanitize_unserialize_selected_items(get_nfilter_request_var('selected_items'));
+
+        if ($selected_items != false) {
+                if ($action == 'fill_extenddb' ) {
+                        for ($i = 0; ($i < count($selected_items)); $i++) {
+				if ($action == 'fill_extenddb') {
+					$dbquery = db_fetch_assoc("SELECT * FROM host WHERE id=".$selected_items[$i]);
+extdb_log("Fill ExtendDB value: ".$selected_items[$i]." - ".print_r($dbquery[0])." - ".$dbquery[0]['description']."\n");
+					extenddb_api_device_new( $dbquery[0] );
+                                }
+                        }
+                 }
+        }
+
+        return $action;
+}
+
+function extenddb_device_action_prepare($save) {
+        global $host_list;
+
+        $action = $save['drp_action'];
+
+        if ($action != 'fill_extenddb' ) {
+                return $save;
+        }
+
+        if ($action == 'fill_extenddb' ) {
+			$action_description = 'Scan for type and Serial';
+				print "<tr>
+                        <td colspan='2' class='even'>
+                                <p>" . __('Click \'Continue\' to %s on these Device(s)', $action_description) . "</p>
+                                <p><div class='itemlist'><ul>" . $save['host_list'] . "</ul></div></p>
+                        </td>
+                </tr>";
+        }
 }
 
 ?>
