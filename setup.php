@@ -21,6 +21,7 @@
  | http://www.cacti.net/                                                   |
  +-------------------------------------------------------------------------+
 */
+include_once($config['base_path'] . '/plugins/extenddb/ssh2.php');
 
 function plugin_extenddb_install () {
 	api_plugin_register_hook('extenddb', 'config_settings', 'extenddb_config_settings', 'setup.php');
@@ -167,7 +168,6 @@ function extenddb_api_device_new($hostrecord_array) {
 
 	// don't do it for disabled
 	if ($hostrecord_array['disabled'] == 'on') {
-extdb_log("ExtDb disable: ". $hostrecord_array['description'] );
 		return $hostrecord_array;
 	}
 
