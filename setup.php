@@ -22,6 +22,7 @@
  +-------------------------------------------------------------------------+
 */
 include_once($config['base_path'] . '/plugins/extenddb/ssh2.php');
+include_once($config['base_path'] . '/plugins/extenddb/Telnet.class.php');
 
 function plugin_extenddb_install () {
 	api_plugin_register_hook('extenddb', 'config_settings', 'extenddb_config_settings', 'setup.php');
@@ -138,25 +139,54 @@ function extenddb_utilities_list () {
 	form_alternate_row();
 	?>
 		<td class="textArea">
-			<a href='utilities.php?action=extenddb_rebuild'>Complete Serial Number and Type.</a>
+			<a href='utilities.php?action=extenddb_complete'>Complete Serial Number and Type.</a>
 		</td>
 		<td class="textArea">
 			Complete Serial Number anb Type of all non filed device
 		</td>
 	<?php
 	form_end_row();
+	form_alternate_row();
+	?>
+		<td class="textArea">
+			<a href='utilities.php?action=extenddb_rebuild'>Recheck All Cisco Device.</a>
+		</td>
+		<td class="textArea">
+			Build Serial Number anb Type of All Cisco Device
+		</td>
+	<?php
+	form_end_row();
 }
 
 function extenddb_utilities_action ($action) {
-	// get device list,  where serial number is empty, or snmp_sysObjectID
-	$dbquery = db_fetch_assoc("SELECT  * FROM host WHERE serial_no is NULL OR snmp_sysObjectID IS NULL OR serial_no = '' OR snmp_sysObjectID = '' ORDER BY id");
-	if ( ($dbquery > 0) && $action == 'extenddb_rebuild' ){
-		if ($action == 'extenddb_rebuild') {
+	if ( $action == 'extenddb_complete' || $action == 'extenddb_rebuild' ){
+		if ($action == 'extenddb_complete') {
+	// get device list,  where serial number is empty, or type
+			$dbquery = db_fetch_assoc("SELECT * FROM host 
+			WHERE (serial_no is NULL OR type IS NULL OR serial_no = '' OR type = '')
+			AND status = '3' AND disabled != 'on'
+			AND snmp_sysDescr LIKE '%cisco%'
+			ORDER BY id");
 		// Upgrade the extenddb value
-			foreach ($dbquery as $host) {
-				extenddb_api_device_new( $host );
+			if( $dbquery > 0 ) {
+				foreach ($dbquery as $host) {
+					update_sn_type( $host );
+				}
+			}
+		} else if ($action == 'extenddb_rebuild') {
+	// get device list,  where serial number is empty, or type
+			$dbquery = db_fetch_assoc("SELECT  * FROM host 
+			WHERE status = '3' AND disabled != 'on'
+			AND snmp_sysDescr LIKE '%cisco%'
+			ORDER BY id");
+		// Upgrade the extenddb value
+			if( $dbquery > 0 ) {
+				foreach ($dbquery as $host) {
+					update_sn_type( $host );
+				}
 			}
 		}
+
 		include_once('./include/top_header.php');
 		utilities();
 		include_once('./include/bottom_footer.php');
@@ -165,9 +195,8 @@ function extenddb_utilities_action ($action) {
 }
 
 function extenddb_api_device_new($hostrecord_array) {
-
-	// don't do it for disabled
-	if ($hostrecord_array['disabled'] == 'on') {
+	// don't do it for disabled, and not UP
+	if ($hostrecord_array['disabled'] == 'on' && $hostrecord_array['status'] != '3') {
 		return $hostrecord_array;
 	}
 
@@ -182,27 +211,27 @@ function extenddb_api_device_new($hostrecord_array) {
 			WHERE id ='.
 			$hostrecord_array['id']);
 
-        // don't do it for not Cisco type
+        // do it for Cisco type
 	if( mb_stripos( $hostrecord_array['snmp_sysDescr'], 'cisco') === false ) {
 		return $hostrecord_array;
 	}
 	
-	if (isset($_POST['serial_no']))
+	if (!empty($_POST['serial_no'])) {
 		$hostrecord_array['serial_no'] = form_input_validate($_POST['serial_no'], 'serial_no', '', true, 3);
-	else {
-		$host_extend_record['serial_no'] = getSN( $hostrecord_array, $hostrecord_array['snmp_sysObjectID'] );
+	} else {
+		$host_extend_record['serial_no'] = get_SN( $hostrecord_array, $hostrecord_array['snmp_sysObjectID'] );
 		$hostrecord_array['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
 	}
 	
-	if (isset($_POST['type']))
+	if (!empty($_POST['type']))
 		$hostrecord_array['type'] = form_input_validate($_POST['type'], 'type', '', true, 3);
 	else
-		$hostrecord_array['type'] = form_input_validate('', 'type', '', true, 3);
+		$hostrecord_array['type'] = get_type( $hostrecord_array );
 
 	if (isset($_POST['isPhone']))
 		$hostrecord_array['isPhone'] = form_input_validate($_POST['isPhone'], 'isPhone', '', true, 3);
 	else
-		$hostrecord_array['isPhone'] = form_input_validate('', 'isPhone', '', true, 3);
+		$hostrecord_array['isPhone'] = form_input_validate('off', 'isPhone', '', true, 3);
 
 	sql_save($hostrecord_array, 'host');
 
@@ -222,7 +251,47 @@ function extenddb_check_dependencies() {
 	return true;
 }
 
-function getSN( $hostrecord_array, $SysObjId ){
+function get_type( $hostrecord_array ) {
+	$stream = create_ssh($hostrecord_array['id']);
+	if( $stream === false ) {
+		return;
+	}
+	
+	if(ssh_write_stream($stream, 'term length 0' ) === false) return;
+	$data = ssh_read_stream($stream);
+	if( $data === false ){
+		ciscotools_log( 'Erreur can\'t read term length 0');
+		return;
+	}
+	
+	if ( ssh_write_stream($stream, 'sh inventory | inc PID') === false ) return;
+	$data = ssh_read_stream($stream);
+	if( $data === false ){
+		ciscotools_log( 'Erreur can\'t read sh inventory');
+		return;
+	}
+	$record = preg_split('/\n|\r\n?/', $data);
+	
+	$SysObjId = substr($hostrecord_array['snmp_sysObjectID'], strrpos( $hostrecord_array['snmp_sysObjectID'], '.' )+1 );
+
+	switch( $SysObjId ) {
+		case "1732": // WS-C4500X-32
+		case "1410": // Nexus 5672UP
+		case "1084": // Nexus 5548UP
+			$data = $record[2];
+			break;
+	
+		default:
+			$data = $record[1];
+			break;
+	}
+
+	$record_array = explode(',', $data);
+	return trim(substr( $record_array[0], stripos($record_array[0], 'PID:')+4 ));
+
+}
+
+function get_SN( $hostrecord_array, $SysObjId ){
 	$SysObjId = substr($SysObjId, strrpos( $SysObjId, '.' )+1 );
 
 	switch( $SysObjId ) {
@@ -269,15 +338,16 @@ function getSN( $hostrecord_array, $SysObjId ){
 		break;
 
 
-        case "324": // WS-C2950
-        case "359": // WS-C2950
-        case "540": // WS-C2940
+    case "324": // WS-C2950
+    case "359": // WS-C2950
+    case "540": // WS-C2940
 	case "578": // 2800 
 	case "837": // CISCO881
 	case "857": // CISCO891
 	case "1378": // C819G-G-U
 	case "1858": // C891F
 	case "1041": // 3945
+	case "2694": // 9200
 	case "2059": // C819G-4G-GA-K9
                 $snmpserialno = ".1.3.6.1.2.1.47.1.1.1.1.11.1";
 
@@ -304,32 +374,28 @@ function extenddb_device_action_array($device_action_array) {
 
         return $device_action_array;
 }
-function extdb_log( $text ){
-    cacti_log( $text, false, "EXTENDDB" );
-}
 
 function extenddb_device_action_execute($action) {
-        global $config;
+   global $config;
+   if ($action != 'fill_extenddb' ) {
+           return $action;
+   }
 
-        if ($action != 'fill_extenddb' ) {
-                return $action;
-        }
+   $selected_items = sanitize_unserialize_selected_items(get_nfilter_request_var('selected_items'));
 
-        $selected_items = sanitize_unserialize_selected_items(get_nfilter_request_var('selected_items'));
-
-        if ($selected_items != false) {
-                if ($action == 'fill_extenddb' ) {
-                        for ($i = 0; ($i < count($selected_items)); $i++) {
+	if ($selected_items != false) {
+		if ($action == 'fill_extenddb' ) {
+			foreach( $selected_items as $hostid ) {
 				if ($action == 'fill_extenddb') {
-					$dbquery = db_fetch_assoc("SELECT * FROM host WHERE id=".$selected_items[$i]);
-extdb_log("Fill ExtendDB value: ".$selected_items[$i]." - ".print_r($dbquery[0])." - ".$dbquery[0]['description']."\n");
-					extenddb_api_device_new( $dbquery[0] );
-                                }
-                        }
-                 }
-        }
+					$dbquery = db_fetch_assoc("SELECT * FROM host WHERE id=".$hostid);
+extdb_log("Fill ExtendDB value: ".$hostid." - ".print_r($dbquery[0])." - ".$dbquery[0]['description']."\n");
+					update_sn_type( $dbquery[0] );
+				}
+			}
+		}
+    }
 
-        return $action;
+	return $action;
 }
 
 function extenddb_device_action_prepare($save) {
@@ -338,7 +404,7 @@ function extenddb_device_action_prepare($save) {
         $action = $save['drp_action'];
 
         if ($action != 'fill_extenddb' ) {
-                return $save;
+			return $save;
         }
 
         if ($action == 'fill_extenddb' ) {
@@ -350,6 +416,21 @@ function extenddb_device_action_prepare($save) {
                         </td>
                 </tr>";
         }
+	return $save;
 }
 
+function update_sn_type( $hostrecord_array ) {
+	extdb_log('host: ' . $hostrecord_array['description'] );
+		$host_extend_record['serial_no'] = get_SN( $hostrecord_array, $hostrecord_array['snmp_sysObjectID'] );
+		$hostrecord_array['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
+		$hostrecord_array['type'] = get_type( $hostrecord_array );
+	extdb_log('SN: ' . $hostrecord_array['serial_no'] );
+	extdb_log('type: ' . $hostrecord_array['type'] );
+
+	sql_save($hostrecord_array, 'host');
+}
+
+function extdb_log( $text ){
+    cacti_log( $text, false, "EXTENDDB" );
+}
 ?>

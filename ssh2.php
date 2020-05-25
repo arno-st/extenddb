@@ -22,6 +22,34 @@
  +-------------------------------------------------------------------------+
 */
 
+function create_ssh($deviceid) {
+	$dbquery = db_fetch_row_prepared("SELECT description, hostname, login, password FROM host WHERE id=?", array($deviceid));
+    if( $dbquery === false ){
+        return false; // no host to backup
+    }
+	
+	// look for the login/password on the device, or take the default one
+	$account=array();
+    if(empty($dbquery['login'])) {
+        $account['login'] = read_config_option('ciscotools_default_login');
+        $account['password'] = read_config_option('ciscotools_default_password');
+    } else {
+        $account['login'] = $dbquery['login'];
+        $account['password'] = $dbquery['password'];
+    }
+ 	
+	// open the ssh stream to the device
+ 	$stream = open_ssh($dbquery['hostname'], $account['login'], $account['password']);
+	if($stream !== false){
+		$data = ssh_read_stream($stream );
+		if( $data === false ){
+			ciscotools_log( 'Erreur can\'t read login prompt');
+			return false;
+		}
+	}
+	return $stream;
+}
+
 function open_ssh( $hostname, $username, $password ) {
     $connection = @ssh2_connect($hostname, 22);
     if($connection === false ) {
