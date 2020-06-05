@@ -22,7 +22,7 @@
  +-------------------------------------------------------------------------+
 */
 include_once($config['base_path'] . '/plugins/extenddb/ssh2.php');
-include_once($config['base_path'] . '/plugins/extenddb/Telnet.class.php');
+include_once($config['base_path'] . '/plugins/extenddb/telnet.php');
 
 function plugin_extenddb_install () {
 	api_plugin_register_hook('extenddb', 'config_settings', 'extenddb_config_settings', 'setup.php');

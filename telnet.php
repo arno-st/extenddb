@@ -22,7 +22,7 @@
  +-------------------------------------------------------------------------+
 */
 
-function create_ssh($deviceid) {
+function create_telnet($deviceid) {
 	$dbquery = db_fetch_row_prepared("SELECT description, hostname, login, password FROM host WHERE id=?", array($deviceid));
     if( $dbquery === false ){
         return false; // no host to connect to
@@ -38,10 +38,10 @@ function create_ssh($deviceid) {
         $account['password'] = $dbquery['password'];
     }
  	
-	// open the ssh stream to the device
- 	$stream = open_ssh($dbquery['hostname'], $account['login'], $account['password']);
+	// open the telnet stream to the device
+ 	$stream = open_telnet($dbquery['hostname'], $account['login'], $account['password']);
 	if($stream !== false){
-		$data = ssh_read_stream($stream );
+		$data = telnet_read_stream($stream );
 		if( $data === false ){
 			ciscotools_log( 'Erreur can\'t read login prompt');
 			return false;
@@ -50,53 +50,68 @@ function create_ssh($deviceid) {
 	return $stream;
 }
 
-function open_ssh( $hostname, $username, $password ) {
-    $connection = @ssh2_connect($hostname, 22);
+function open_telnet( $hostname, $username, $password ) {
+    $connection = stream_socket_client ($hostname.':23');
     if($connection === false ) {
-        cacti_log( "can't open SSH session to ".$hostname." error: ".$connection, false, 'CISCOTOOLS');
+        cacti_log( "can't open Telnet session to ".$hostname." error: ".$connection, false, 'CISCOTOOLS');
         return false;
     }
 
-    if( !@ssh2_auth_password($connection, $username, $password) ) {
-        cacti_log( "can't login to host ".$hostname." via SSH session, log: ".$username, false, 'CISCOTOOLS');
-        return false;
-   }
+	stream_set_timeout($connection, 210);
+	stream_set_blocking($connection, true);
 
-    $stream = @ssh2_shell($connection, 'vt100', null, 80, 24, SSH2_TERM_UNIT_CHARS );
-	stream_set_timeout($stream, 210);
-	stream_set_blocking($stream, true);
+	// Username prompt
+    do {
+		$output = telnet_read_stream($connection, 'username:');
+		if( !$output ) {
+			cacti_log( "Login error for host ".$hostname." via Telnet session, log: ".$username, false, 'CISCOTOOLS');
+			return false;
+		}
+	} while( !stripos( $output, 'username' ) );
+	telnet_write_stream($connection, $username );
+	
+	// Password prompt
+    do {
+		$output = telnet_read_stream($connection, 'password:');
+		if( !$output ) {
+			cacti_log( "Password error for host ".$hostname." via Telnet session, log: ".$username, false, 'CISCOTOOLS');
+			return false;
+		}
+	} while( !stripos( $output, 'password' ) );
+	telnet_write_stream($connection, $password );
 
-    return $stream;
+    return $connection;
 }
 
-function close_ssh($connection) {
-    @ssh2_disconnect ($connection);
+function close_telnet($connection) {
+    fclose($connection);
 }
 
-function ssh_read_stream($stream) {
+function telnet_read_stream($stream, $term='#') {
 	$output = '';
 	
     do {
 		$stream_out = fread ($stream, 1);
-        // ciscotools_log('stream read: >'.$stream_out.'<('.strlen($stream_out).')'.' hex:'.bin2hex($stream_out));
+        //ciscotools_log('stream read: >'.$stream_out.'<('.strlen($stream_out).')'.' hex:'.bin2hex($stream_out));
 		$output .= $stream_out;
         // if the terminal is waiting to go for the next screen, just issue a space to go one
         if( strpos($output, "--More--" ) !== false ) {
-            ssh_write_stream($stream, ' ' );
+            telnet_write_stream($stream, ' ' );
         }
-     } while ( !feof($stream) && $stream_out !== false && $stream_out != '#');
+    } while ( !feof($stream) && $stream_out !== false && stripos($output, $term) === false );
    
     if(strlen($output)!=0) {
         return $output;
     }
     
-    ciscotools_log('ssh_read_stream - Error - No output');
+    ciscotools_log('telnet_read_stream - Error - No output');
     return false;
 }
 
-function ssh_write_stream( $stream, $cmd){
+function telnet_write_stream( $stream, $cmd){
     do {
         $write = fwrite( $stream, $cmd.PHP_EOL );
 	} while( $write < strlen($cmd) );
 }
+
 ?>
