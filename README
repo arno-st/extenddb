@@ -36,3 +36,4 @@
 1.2.4 Add 3 fields: login, password, console type (ssh, telnet)
 1.3.0 Added ssh function to be able to get serial number en type via ssh
 1.3.1 Added support for telnet
+1.3.2 Change the information for SN and type, based on a DB table instaed of inside the code
