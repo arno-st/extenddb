@@ -222,10 +222,12 @@ function extenddb_utilities_action ($action) {
 
 function extenddb_api_device_new($hostrecord_array) {
 	// don't do it for disabled, and not UP
-	if ($hostrecord_array['disabled'] == 'on' && $hostrecord_array['status'] != '3') {
+	if ($hostrecord_array['disabled'] == 'on' ) {
 		return $hostrecord_array;
 	}
-
+	if ( $hostrecord_array['status'] != '3' ) {
+		return $hostrecord_array;
+	}
 // host record_array just contain the basic information, need to be pooled for extenddb value
 	$hostrecord_array['snmp_sysDescr'] = db_fetch_cell_prepared('SELECT snmp_sysDescr
 			FROM host
@@ -344,13 +346,13 @@ function get_SN( $hostrecord_array, $SysObjId ){
 	
 	$serialno = '';
 	if( count($stacknumber) == 0) { // No stack or no answer to CISCO-STACKWISE-MIB
-	// check if we have a vss
-	$stacknumber = cacti_snmp_walk( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $snmp_vssinfo, 
-	$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
-	$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
-	$hostrecord_array['snmp_context'] ); // count() if 0 mean no stack possibility, or can't read (4500x)
+		// check if we have a vss
+		$vssnumber = cacti_snmp_walk( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $snmp_vssinfo, 
+		$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
+		$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
+		$hostrecord_array['snmp_context'] ); // count() if 0 mean no stack possibility, or can't read (4500x)
 	
-		if( count($stacknumber) == 0) { // no vss either
+		if( count($vssnumber) == 0) { // no vss either
 			$serialno = cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $snmpserialno, 
 			$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
 			$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
@@ -360,7 +362,7 @@ function get_SN( $hostrecord_array, $SysObjId ){
 				cacti_log( $text, false, "EXTENDDB" );
 			}
 		} else {
-			foreach( $stacknumber as $stackitem ) {
+			foreach( $vssnumber as $stackitem ) {
 				$regex = '~(.[0-9.]+)\.[0-9]+~';
 				preg_match( $regex, $snmpserialno, $result ); // extract base of the OID from the DB (left part)
 				$stacksnmpswnum = $result[1];
@@ -374,7 +376,7 @@ function get_SN( $hostrecord_array, $SysObjId ){
 				$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
 				$hostrecord_array['snmp_context'] );
 			}			
-		$serialno = trim($serialno);
+			$serialno = trim($serialno);
 		}
 	} else {
 		foreach( $stacknumber as $stackitem ) {
@@ -416,7 +418,7 @@ function extenddb_device_action_execute($action) {
 				if ($action == 'fill_extenddb') {
 					$dbquery = db_fetch_assoc("SELECT * FROM host WHERE id=".$hostid);
 extdb_log("Fill ExtendDB value: ".$hostid." - ".print_r($dbquery[0])." - ".$dbquery[0]['description']."\n");
-					update_sn_type( $dbquery[0] );
+					update_sn_type( $dbquery[0], true );
 				}
 			}
 		}
@@ -446,8 +448,8 @@ function extenddb_device_action_prepare($save) {
 	return $save;
 }
 
-function update_sn_type( $hostrecord_array ) {
-	if( $hostrecord_array['status']!= '3' ) {
+function update_sn_type( $hostrecord_array, $force=false ) {
+	if( $hostrecord_array['status']!= '3' and !$force) {
 	extdb_log('Host not up: '.$hostrecord_array['description']);
 	// host down do nothing
 		return;
@@ -455,8 +457,17 @@ function update_sn_type( $hostrecord_array ) {
 	
 	extdb_log('host: ' . $hostrecord_array['description'] );
 		$host_extend_record['serial_no'] = get_SN( $hostrecord_array, $hostrecord_array['snmp_sysObjectID'] );
+		if( $host_extend_record['serial_no'] == 'U' ) {
+			extdb_log('can t SNMP read SN on ' . $hostrecord_array['description'] );
+			return;
+		}
+		
 		$hostrecord_array['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
 		$hostrecord_array['type'] = get_type( $hostrecord_array );
+		if( $hostrecord_array['type'] == 'U' ) {
+			extdb_log('can t SNMP read type of ' . $hostrecord_array['description'] );
+			return;
+		}
 	extdb_log('SN: ' . $hostrecord_array['serial_no'] );
 	extdb_log('type: ' . $hostrecord_array['type'] );
 
