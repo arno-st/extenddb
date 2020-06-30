@@ -92,17 +92,19 @@ function extenddb_check_upgrade() {
 		if( $old < '1.3.2' ) {
 			$data = array();
 			$data['columns'][] = array('name' => 'id', 'type' => 'mediumint(8)', 'auto_increment'=>'');
-			$data['columns'][] = array('name' => 'snmp_SysObjectId', 'type' => 'varchar(64)', 'NULL' => true );
+			$data['columns'][] = array('name' => 'snmp_SysObjectId', 'type' => 'varchar(64)', 'NULL' => false );
 			$data['columns'][] = array('name' => 'oid_model', 'type' => 'varchar(64)', 'NULL' => false );
 			$data['columns'][] = array('name' => 'oid_sn', 'type' => 'varchar(64)', 'NULL' => false );
 			$data['columns'][] = array('name' => 'model', 'type' => 'varchar(64)', 'NULL' => false );
  			$data['primary'] = 'id';
 			$data['keys'][] = array('name' => 'snmp_SysObjectId', 'columns' => 'snmp_SysObjectId');
 			$data['keys'][] = array('name' => 'oid_model', 'columns' => 'oid_model');
+			$data['keys'][] = array('name' => 'model', 'columns' => 'model');
 			$data['type'] = 'InnoDB';
 			api_plugin_db_table_create('extenddb', 'plugin_extenddb_model', $data);
 			fill_model_db();
 		}
+		upgrade_model_db(); // place where new device are added
 
 	}
 }
@@ -211,6 +213,9 @@ function extenddb_utilities_action ($action) {
 				}
 			}
 		}
+		top_header();
+		utilities();
+		bottom_footer();
 	} 
 	return $action;
 }
@@ -308,13 +313,20 @@ function get_type( $hostrecord_array ) {
 	$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
 	$hostrecord_array['snmp_context'] );
 
+	if( empty($data_model) ) {
+		$text = "Can t find model No for : " . $hostrecord_array['description'].'(oid:'.$hostrecord_array['snmp_sysObjectID'].')';
+		cacti_log( $text, false, "EXTENDDB" );
+	}
+
 	return $data_model;
 }
 
 function get_SN( $hostrecord_array, $SysObjId ){
+	$snmp_stackinfo = "1.3.6.1.4.1.9.9.500.1.2.1.1.1"; // will return an array of switch number, the id last number of the OID
+	$snmp_vssinfo = "1.3.6.1.4.1.9.9.388.1.2.2.1.1"; // will return an array of switch number in a vss
+	
 //snmp_SysObjectId, oid_model, oid_sn, model
 	$sqlquery = "SELECT * FROM plugin_extenddb_model WHERE snmp_SysObjectId='".$SysObjId."'";
-	ciscotools_log('SNMP query: '.$sqlquery);
 
 	$result = db_fetch_row($sqlquery);
 	if( empty($result) ) {
@@ -324,11 +336,63 @@ function get_SN( $hostrecord_array, $SysObjId ){
 		$snmpserialno =  $result['oid_sn'];
 	}
 	
-	$serialno = cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $snmpserialno, 
+	// check if we have a stack, and how many device
+	$stacknumber = cacti_snmp_walk( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $snmp_stackinfo, 
 	$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
 	$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
-	$hostrecord_array['snmp_context'] );
+	$hostrecord_array['snmp_context'] ); // count() if 0 mean no stack possibility, or can't read (4500x)
+	
+	$serialno = '';
+	if( count($stacknumber) == 0) { // No stack or no answer to CISCO-STACKWISE-MIB
+	// check if we have a vss
+	$stacknumber = cacti_snmp_walk( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $snmp_vssinfo, 
+	$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
+	$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
+	$hostrecord_array['snmp_context'] ); // count() if 0 mean no stack possibility, or can't read (4500x)
+	
+		if( count($stacknumber) == 0) { // no vss either
+			$serialno = cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $snmpserialno, 
+			$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
+			$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
+			$hostrecord_array['snmp_context'] );
+			if( empty($serialno) ) {
+				$text = "Can t find serial No for : " . $hostrecord_array['description'] .'(oid:'.$hostrecord_array['snmp_sysObjectID'].')';
+				cacti_log( $text, false, "EXTENDDB" );
+			}
+		} else {
+			foreach( $stacknumber as $stackitem ) {
+				$regex = '~(.[0-9.]+)\.[0-9]+~';
+				preg_match( $regex, $snmpserialno, $result ); // extract base of the OID from the DB (left part)
+				$stacksnmpswnum = $result[1];
+		
+				$regex = '~.[0-9].*\.([0-9].*)~';
+				preg_match( $regex, $stackitem['oid'], $result ); // extract the OID of the switch number from the snmp query
+				$stacksnmpno = $stacksnmpswnum.'.'.$result[1];
+	
+				$serialno .= ' ' . cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $stacksnmpno, 
+				$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
+				$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
+				$hostrecord_array['snmp_context'] );
+			}			
+		$serialno = trim($serialno);
+		}
+	} else {
+		foreach( $stacknumber as $stackitem ) {
+			$regex = '~(.[0-9.]+)\.[0-9]+~';
+			preg_match( $regex, $snmpserialno, $result ); // extract base of the OID from the DB (left part)
+			$stacksnmpswnum = $result[1];
+	
+			$regex = '~.[0-9].*\.([0-9].*)~';
+			preg_match( $regex, $stackitem['oid'], $result ); // extract the OID of the switch number from the snmp query
+			$stacksnmpno = $stacksnmpswnum.'.'.$result[1];
 
+			$serialno .= ' ' . cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $stacksnmpno, 
+			$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
+			$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
+			$hostrecord_array['snmp_context'] );
+		}
+		$serialno = trim($serialno);
+	}
 	return $serialno;
 }
 
@@ -384,6 +448,7 @@ function extenddb_device_action_prepare($save) {
 
 function update_sn_type( $hostrecord_array ) {
 	if( $hostrecord_array['status']!= '3' ) {
+	extdb_log('Host not up: '.$hostrecord_array['description']);
 	// host down do nothing
 		return;
 	}
@@ -405,35 +470,34 @@ function extdb_log( $text ){
 
 function fill_model_db(){
 /* insert values in plugin_ciscotools_modele */
-	db_execute("REPLACE INTO plugin_extenddb_model "
+	db_execute("INSERT INTO plugin_extenddb_model "
 	."(snmp_SysObjectId, oid_model, oid_sn, model) VALUES "
 	."('iso.3.6.1.4.1.9.1.837', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'CISCO881'),"
 	."('iso.3.6.1.4.1.9.1.857', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'CISCO891-K9'),"
 	."('iso.3.6.1.4.1.9.1.959', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'IE-3000-8TC'),"
-	."('iso.3.6.1.4.1.9.1.279', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'VG200'),"
+	."('iso.3.6.1.4.1.9.1.279', '.1.3.6.1.2.1.47.1.1.1.1.2.2', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'VG200'),"
 	."('iso.3.6.1.4.1.9.1.324', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'WS-C2950-24'),"
-	."('iso.3.6.1.4.1.9.1.516', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'WS-C3750G-12S'),"
+	."('iso.3.6.1.4.1.9.1.516', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C3750G-12S'),"
 	."('iso.3.6.1.4.1.9.1.540', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'WS-C2940-8TT-S'),"
-	."('iso.3.6.1.4.1.9.1.558', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'VG224'),"
-	."('iso.3.6.1.4.1.9.1.563', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'WS-C3560-24PS'),"
+	."('iso.3.6.1.4.1.9.1.558', '.1.3.6.1.2.1.47.1.1.1.1.2.2', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'VG224'),"
+	."('iso.3.6.1.4.1.9.1.563', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C3560-24PS'),"
 	."('iso.3.6.1.4.1.9.1.569', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', '877'),"
 	."('iso.3.6.1.4.1.9.1.571', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'CISCO871-K9         Chassis'),"
 	."('iso.3.6.1.4.1.9.1.577', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', '2821'),"
 	."('iso.3.6.1.4.1.9.1.578', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', '2851'),"
-	."('iso.3.6.1.4.1.9.1.614', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'WS-C3560G-24PS'),"
+	."('iso.3.6.1.4.1.9.1.614', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C3560G-24PS'),"
 	."('iso.3.6.1.4.1.9.1.633', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C3560-24TS-E'),"
-	."('iso.3.6.1.4.1.9.1.694', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'WS-C2960-24TC-L'),"
-	."('iso.3.6.1.4.1.9.1.797', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'WS-C3560-8PC'),"	
-	."('iso.3.6.1.4.1.9.1.1020', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'WS-C3560V2-24TS'),"
-	."('iso.3.6.1.4.1.9.1.1021', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'WS-C3560V2-24PS'),"
+	."('iso.3.6.1.4.1.9.1.694', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C2960-24TC-L'),"
+	."('iso.3.6.1.4.1.9.1.797', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C3560-8PC'),"	
+	."('iso.3.6.1.4.1.9.1.1020', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C3560V2-24TS'),"
+	."('iso.3.6.1.4.1.9.1.1021', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C3560V2-24PS'),"
 	."('iso.3.6.1.4.1.9.1.1041', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'CISCO3945-CHASSIS'),"
 	."('iso.3.6.1.4.1.9.1.1084', '.1.3.6.1.2.1.47.1.1.1.1.13.22', '.1.3.6.1.2.1.47.1.1.1.1.11.22', 'N5K-C5548UP'),"
 	."('iso.3.6.1.4.1.9.1.1208', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C2960X-24PS-L'),"
-	."('iso.3.6.1.4.1.9.1.1208', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C2960S-24PS-L'),"
-	."('iso.3.6.1.4.1.9.1.1315', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'WS-C2960CPD-8PT-L'),"
+	."('iso.3.6.1.4.1.9.1.1315', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C2960CPD-8PT-L'),"
 	."('iso.3.6.1.4.1.9.1.1317', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C3560CG-8PC-S'),"
 	."('iso.3.6.1.4.1.9.1.1378', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'C819G-U-K9'),"
-	."('iso.3.6.1.4.1.9.1.1384', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'C819HG-U'),"
+	."('iso.3.6.1.4.1.9.1.1384', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'C819HG-U-K9'),"
 	."('iso.3.6.1.4.1.9.1.1747', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'VG204XM'),"
 	."('iso.3.6.1.4.1.9.1.1470', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'IE-2000-4TC-G-B'),"
 	."('iso.3.6.1.4.1.9.1.1471', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'IE-2000-4T-G-B'),"
@@ -449,13 +513,23 @@ function fill_model_db(){
 	."('iso.3.6.1.4.1.9.1.2593', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'C9500-16X'),"
 	."('iso.3.6.1.4.1.9.1.2661', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'IR1101-K9'),"
 	."('iso.3.6.1.4.1.9.1.2694', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'C9200L-24P-4G-E'),"
-	."('iso.3.6.1.4.1.9.12.3.1.3.1062', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', '6248UP'),"
+	."('iso.3.6.1.4.1.9.12.3.1.3.1062', '.1.3.6.1.2.1.47.1.1.1.1.13.10', '.1.3.6.1.2.1.47.1.1.1.1.11.10', 'UCS-FI-6248UP'),"
 	."('iso.3.6.1.4.1.9.12.3.1.3.1084', '.1.3.6.1.2.1.47.1.1.1.1.13.22', '.1.3.6.1.2.1.47.1.1.1.1.11.22', '5548UP'),"
 	."('iso.3.6.1.4.1.9.12.3.1.3.1410', '.1.3.6.1.2.1.47.1.1.1.1.13.22', '.1.3.6.1.2.1.47.1.1.1.1.11.22', '5672UP'),"
 	."('iso.3.6.1.4.1.9.12.3.1.3.1491', '.1.3.6.1.2.1.47.1.1.1.1.13.22', '.1.3.6.1.2.1.47.1.1.1.1.11.22', 'DS-C9148S-K9'),"
 	."('iso.3.6.1.4.1.9.12.3.1.3.1519', '.1.3.6.1.2.1.47.1.1.1.1.13.22', '.1.3.6.1.2.1.47.1.1.1.1.11.22', 'Nexus1000VSG'),"
 	."('iso.3.6.1.4.1.9.12.3.1.3.840', '.1.3.6.1.2.1.47.1.1.1.1.13.22', '.1.3.6.1.2.1.47.1.1.1.1.11.22', 'Virtual Supervisor Module')"
 	);
+}
+
+function upgrade_model_db(){
+/* insert news values in plugin_ciscotools_modele */
+/*	db_execute("INSERT INTO plugin_extenddb_model "
+	."(snmp_SysObjectId, oid_model, oid_sn, model) VALUES "
+	."('iso.3.6.1.4.1.9.1.1497', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'C819G-4G-G-K9')"
+	." ON DUPLICATE KEY UPDATE snmp_SysObjectId=VALUES(snmp_SysObjectId), oid_model=VALUES(oid_model), oid_sn=VALUES(oid_sn), model=VALUES(model)"
+	 );
+*/
 }
 
 ?>

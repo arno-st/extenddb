@@ -210,8 +210,8 @@ function display_type_db() {
 			$model = filter_value($item['model'], get_request_var('model'));
 			form_alternate_row('line' . $item['id'], false);
 
-				form_selectable_cell('<a class="linkEditMain" href="' . html_escape('extenddb_type.php?action=edit_type&id=' . 
-				$item['id']) . '">' . html_escape($model) . '</a>', $item['id']);
+				print '<td><a href="' . html_escape('extenddb_type.php?action=edit_type&id=' . 
+				$item['id']) . '">' . $item['model'] . '</a>'. $item['id'].'</td>';
 
 				form_selectable_cell($item['snmp_SysObjectId'], $item['snmp_SysObjectId']);
 				form_selectable_cell($item['oid_model'], $item['oid_model']);
