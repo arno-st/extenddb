@@ -221,13 +221,11 @@ function extenddb_utilities_action ($action) {
 }
 
 function extenddb_api_device_new($hostrecord_array) {
-	// don't do it for disabled, and not UP
+	// don't do it for disabled
 	if ($hostrecord_array['disabled'] == 'on' ) {
 		return $hostrecord_array;
 	}
-	if ( $hostrecord_array['status'] != '3' ) {
-		return $hostrecord_array;
-	}
+	
 // host record_array just contain the basic information, need to be pooled for extenddb value
 	$hostrecord_array['snmp_sysDescr'] = db_fetch_cell_prepared('SELECT snmp_sysDescr
 			FROM host
