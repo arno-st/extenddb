@@ -24,6 +24,8 @@
 include_once($config['base_path'] . '/plugins/extenddb/ssh2.php');
 include_once($config['base_path'] . '/plugins/extenddb/telnet.php');
 
+//$snmpsysobjid		 = ".1.3.6.1.2.1.1.2.0";
+
 function plugin_extenddb_install () {
 	api_plugin_register_hook('extenddb', 'config_settings', 'extenddb_config_settings', 'setup.php');
 	api_plugin_register_hook('extenddb', 'config_form', 'extenddb_config_form', 'setup.php');
@@ -533,12 +535,13 @@ function fill_model_db(){
 
 function upgrade_model_db(){
 /* insert news values in plugin_ciscotools_modele */
-/*	db_execute("INSERT INTO plugin_extenddb_model "
+	db_execute("INSERT INTO plugin_extenddb_model "
 	."(snmp_SysObjectId, oid_model, oid_sn, model) VALUES "
-	."('iso.3.6.1.4.1.9.1.1497', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'C819G-4G-G-K9')"
+	."('iso.3.6.1.4.1.9.12.3.1.3.2560', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'IR807-LTE-GA-K9'),"
+	."('iso.3.6.1.4.1.9.12.3.1.3.2684', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'IE-3200-8P2S')"
 	." ON DUPLICATE KEY UPDATE snmp_SysObjectId=VALUES(snmp_SysObjectId), oid_model=VALUES(oid_model), oid_sn=VALUES(oid_sn), model=VALUES(model)"
 	 );
-*/
+
 }
 
 ?>

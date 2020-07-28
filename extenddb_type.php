@@ -211,7 +211,7 @@ function display_type_db() {
 			form_alternate_row('line' . $item['id'], false);
 
 				print '<td><a href="' . html_escape('extenddb_type.php?action=edit_type&id=' . 
-				$item['id']) . '">' . $item['model'] . '</a>'. $item['id'].'</td>';
+				$item['id']) . '">' . $item['model'] . '</a>'.'</td>';
 
 				form_selectable_cell($item['snmp_SysObjectId'], $item['snmp_SysObjectId']);
 				form_selectable_cell($item['oid_model'], $item['oid_model']);
