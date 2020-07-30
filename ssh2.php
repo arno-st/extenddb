@@ -53,7 +53,7 @@ function create_ssh($deviceid) {
 function open_ssh( $hostname, $username, $password ) {
     $connection = @ssh2_connect($hostname, 22);
     if($connection === false ) {
-        cacti_log( "can't open SSH session to ".$hostname." error: ".$connection, false, 'CISCOTOOLS');
+        cacti_log( "can't open SSH session to ".$hostname, false, 'CISCOTOOLS');
         return false;
     }
 

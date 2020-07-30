@@ -244,20 +244,20 @@ function extenddb_api_device_new($hostrecord_array) {
 		return $hostrecord_array;
 	}
 	
-	if (!empty($_POST['serial_no'])) {
-		$hostrecord_array['serial_no'] = form_input_validate($_POST['serial_no'], 'serial_no', '', true, 3);
+	if (!isset_request_var('serial_no')) {
+		$hostrecord_array['serial_no'] = form_input_validate(get_filter_request_var('serial_no'), 'serial_no', '', true, 3);
 	} else {
 		$host_extend_record['serial_no'] = get_SN( $hostrecord_array, $hostrecord_array['snmp_sysObjectID'] );
 		$hostrecord_array['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
 	}
 	
-	if (!empty($_POST['type']))
-		$hostrecord_array['type'] = form_input_validate($_POST['type'], 'type', '', true, 3);
+	if (!isset_request_var('type'))
+		$hostrecord_array['type'] = form_input_validate(get_filter_request_var('type'), 'type', '', true, 3);
 	else
 		$hostrecord_array['type'] = get_type( $hostrecord_array );
 
-	if (isset($_POST['isPhone']))
-		$hostrecord_array['isPhone'] = form_input_validate($_POST['isPhone'], 'isPhone', '', true, 3);
+	if (isset_request_var('isPhone'))
+		$hostrecord_array['isPhone'] = form_input_validate(get_filter_request_var('isPhone'), 'isPhone', '', true, 3);
 	else
 		$hostrecord_array['isPhone'] = form_input_validate('off', 'isPhone', '', true, 3);
 
@@ -492,7 +492,7 @@ function fill_model_db(){
 	."('iso.3.6.1.4.1.9.1.540', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'WS-C2940-8TT-S'),"
 	."('iso.3.6.1.4.1.9.1.558', '.1.3.6.1.2.1.47.1.1.1.1.2.2', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'VG224'),"
 	."('iso.3.6.1.4.1.9.1.563', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C3560-24PS'),"
-	."('iso.3.6.1.4.1.9.1.569', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', '877'),"
+	."('iso.3.6.1.4.1.9.1.569', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'CISCO877-K9         Chassis'),"
 	."('iso.3.6.1.4.1.9.1.571', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'CISCO871-K9         Chassis'),"
 	."('iso.3.6.1.4.1.9.1.577', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', '2821'),"
 	."('iso.3.6.1.4.1.9.1.578', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', '2851'),"
@@ -517,10 +517,10 @@ function fill_model_db(){
 	."('iso.3.6.1.4.1.9.1.1730', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'IE-2000-16PTC-G-E'),"
 	."('iso.3.6.1.4.1.9.1.1732', '.1.3.6.1.2.1.47.1.1.1.1.13.1000', '.1.3.6.1.2.1.47.1.1.1.1.11.1000', 'WS-C-4500X-32'),"
 	."('iso.3.6.1.4.1.9.1.1745', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'WS-C3850-24XS-S'),"
-	."('iso.3.6.1.4.1.9.1.1858', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'cisco891F'),"
+	."('iso.3.6.1.4.1.9.1.1858', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'C891F-K9'),"
 	."('iso.3.6.1.4.1.9.1.2059', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'cisco819G-4G'),"
 	."('iso.3.6.1.4.1.9.1.2134', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C3560CX-12PC-S'),"
-	."('iso.3.6.1.4.1.9.1.2132', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C3560CX-12PD-S'),"
+	."('iso.3.6.1.4.1.9.1.2277', '.1.3.6.1.2.1.47.1.1.1.1.13.1001', '.1.3.6.1.2.1.47.1.1.1.1.11.1001', 'WS-C3560CX-12PD-S'),"
 	."('iso.3.6.1.4.1.9.1.2593', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'C9500-16X'),"
 	."('iso.3.6.1.4.1.9.1.2661', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'IR1101-K9'),"
 	."('iso.3.6.1.4.1.9.1.2694', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'C9200L-24P-4G-E'),"
