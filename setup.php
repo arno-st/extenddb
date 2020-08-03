@@ -539,6 +539,7 @@ function upgrade_model_db(){
 	."(snmp_SysObjectId, oid_model, oid_sn, model) VALUES "
 	."('iso.3.6.1.4.1.9.12.3.1.3.2560', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'IR807-LTE-GA-K9'),"
 	."('iso.3.6.1.4.1.9.12.3.1.3.2684', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'IE-3200-8P2S')"
+	."('iso.3.6.1.4.1.9.1.2694', '.1.3.6.1.2.1.47.1.1.1.1.13.1', '.1.3.6.1.2.1.47.1.1.1.1.11.1', 'C9200L-24P-4X'),"
 	." ON DUPLICATE KEY UPDATE snmp_SysObjectId=VALUES(snmp_SysObjectId), oid_model=VALUES(oid_model), oid_sn=VALUES(oid_sn), model=VALUES(model)"
 	 );
 
