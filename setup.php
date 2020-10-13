@@ -65,7 +65,10 @@ function extenddb_check_upgrade() {
 
 	$version = plugin_extenddb_version ();
 	$current = $version['version'];
-	$old     = read_config_option('plugin_extenddb_version');
+	$old     = db_fetch_cell('SELECT version
+		FROM plugin_config
+		WHERE directory="extenddb"');
+
 	if ($current != $old) {
 
 		// Set the new version
