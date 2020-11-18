@@ -192,13 +192,17 @@ function extenddb_utilities_list () {
 		print "<td class='nowrap' style='vertical-align:top;'> <a class='hyperLink' href='utilities.php?action=extenddb_count'>ExtendDB type count</a></td>\n";
 		print "<td>Count the number of each device type.</td>\n";
 	form_end_row();
+	form_alternate_row();
+		print "<td class='nowrap' style='vertical-align:top;'> <a class='hyperLink' href='utilities.php?action=extenddb_export_type_SN'>ExtendDB Export Type and SN</a></td>\n";
+		print "<td>Export in CSV format, the type and SN of all active device.</td>\n";
+	form_end_row();
 
 }
 
 function extenddb_utilities_action ($action) {
 	global $item_rows;
 	
-	if ( $action == 'extenddb_complete' || $action == 'extenddb_rebuild' ){
+	if ( $action == 'extenddb_complete' || $action == 'extenddb_rebuild' || $action == 'extenddb_export_type_SN' ){
 		if ($action == 'extenddb_complete') {
 	// get device list,  where serial number is empty, or type
 			$dbquery = db_fetch_assoc("SELECT * FROM host 
@@ -224,6 +228,12 @@ function extenddb_utilities_action ($action) {
 					update_sn_type( $host );
 				}
 			}
+		} else if ($action == 'extenddb_export_type_SN') {
+	// export CSV device list
+			$dbquery = db_fetch_assoc("SELECT description, hostname, type, serial_no FROM host 
+			WHERE status = '3' AND disabled != 'on'
+			AND snmp_sysDescr LIKE '%cisco%'
+			ORDER BY id");
 		}
 		top_header();
 		utilities();
@@ -684,7 +694,7 @@ function get_type( $hostrecord_array ) {
 	$hostrecord_array['snmp_context'] );
 
 	if( empty($data_model) ) {
-		$text = "Can t find model No for : " . $hostrecord_array['description'].'(oid:'.$hostrecord_array['snmp_sysObjectID'].')';
+		$text = "Can t find model No for : " . $hostrecord_array['description'].'(oid:'.$hostrecord_array['snmp_sysObjectID'].') at: '. $oid_model;
 		cacti_log( $text, false, "EXTENDDB" );
 	}
 
@@ -726,7 +736,7 @@ function get_SN( $hostrecord_array, $SysObjId ){
 			$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
 			$hostrecord_array['snmp_context'] );
 			if( empty($serialno) ) {
-				$text = "Can t find serial No for : " . $hostrecord_array['description'] .'(oid:'.$hostrecord_array['snmp_sysObjectID'].')';
+				$text = "Can t find serial No for : " . $hostrecord_array['description'] .'(oid:'.$hostrecord_array['snmp_sysObjectID'].') at: '. $snmpserialno;
 				cacti_log( $text, false, "EXTENDDB" );
 			}
 		} else {
