@@ -37,3 +37,4 @@
 1.3.0 Added ssh function to be able to get serial number en type via ssh
 1.3.1 Added support for telnet
 1.3.2 Change the information for SN and type, based on a DB table instaed of inside the code
+1.3.3 Move the type count from Linkdiscovery, and add serial number in the detail display
