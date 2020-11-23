@@ -202,7 +202,7 @@ function extenddb_utilities_list () {
 function extenddb_utilities_action ($action) {
 	global $item_rows;
 	
-	if ( $action == 'extenddb_complete' || $action == 'extenddb_rebuild' || $action == 'extenddb_export_type_SN' ){
+	if ( $action == 'extenddb_complete' || $action == 'extenddb_rebuild' ){
 		if ($action == 'extenddb_complete') {
 	// get device list,  where serial number is empty, or type
 			$dbquery = db_fetch_assoc("SELECT * FROM host 
@@ -228,16 +228,28 @@ function extenddb_utilities_action ($action) {
 					update_sn_type( $host );
 				}
 			}
-		} else if ($action == 'extenddb_export_type_SN') {
-	// export CSV device list
-			$dbquery = db_fetch_assoc("SELECT description, hostname, type, serial_no FROM host 
-			WHERE status = '3' AND disabled != 'on'
-			AND snmp_sysDescr LIKE '%cisco%'
-			ORDER BY id");
 		}
 		top_header();
 		utilities();
 		bottom_footer();
+	} else if ($action == 'extenddb_export_type_SN') {
+	// export CSV device list
+		$dbquery = db_fetch_assoc("SELECT description, hostname, type, serial_no FROM host 
+		WHERE status = '3' AND disabled != 'on'
+		AND snmp_sysDescr LIKE '%cisco%'
+		ORDER BY id");
+		
+		header("Content-Type: text/csv");
+		header("Content-Disposition: attachment; filename=cacti-type-sn.csv");
+
+		$stdout = fopen('php://output', 'w');
+		$header = array('Description', 'Hostname', 'type', 'Serial Number');
+		fputcsv($stdout, $header );
+
+		foreach($dbquery as $host ){
+			fputcsv($stdout, $host);
+		}
+		fclose($stdout);
 	} elseif ($action == 'extenddb_count') {
 		top_header();
 
