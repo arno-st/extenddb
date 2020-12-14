@@ -231,24 +231,7 @@ function extenddb_utilities_action ($action) {
 		utilities();
 		bottom_footer();
 	} else if ($action == 'extenddb_export_type_SN') {
-	// export CSV device list
-		$dbquery = db_fetch_assoc("SELECT description, hostname, type, serial_no FROM host 
-		WHERE status = '3' AND disabled != 'on'
-		AND snmp_sysDescr LIKE '%cisco%'
-		ORDER BY id");
-		
-		$stdout = fopen('php://output', 'w');
-
-		header('Content-type: application/excel');
-		header('Content-Disposition: attachment; filename=cacti-devices-type-sn.csv');
-	
-		$header = array_keys($dbquery[0]);
-		fputcsv($stdout, $header);
-
-		foreach($dbquery as $h) {
-			fputcsv($stdout, $h );
-		}
-		fclose($stdout);
+		data_export();
 	} elseif ($action == 'extenddb_count') {
 		top_header();
 
@@ -565,6 +548,9 @@ function extenddb_utilities_action ($action) {
 			LIMIT ' . ($rows*(get_request_var('page')-1)) . ',' . $rows;
 
 		$extenddb_display = db_fetch_assoc($extenddb_display_sql);
+extdb_log('extenddb_display_sql:'.$extenddb_display_sql);
+extdb_log('row: '.$rows .' page:' . get_request_var('page') );
+//SELECT id, hostname, description, serial_no FROM host WHERE type LIKE 'C9200L-24P-4X' ORDER BY description ASC LIMIT 50,50
 
 	/* generate page list */
 		$nav = html_nav_bar('utilities.php?action=extenddb_display&filter=' . get_request_var('filter').'&model='.get_request_var('model'), MAX_DISPLAY_PAGES, get_request_var('page'), $rows, $total_rows, 11, __('Entries'), 'page', 'main');
@@ -612,8 +598,11 @@ function extenddb_utilities_action ($action) {
 }
 
 function extenddb_api_device_new($hostrecord_array) {
+cacti_log('Enter Extenddb', false, 'EXTENDDB' );
+
 	// don't do it for disabled
 	if ($hostrecord_array['disabled'] == 'on' ) {
+cacti_log('Exit Extenddb', false, 'EXTENDDB' );
 		return $hostrecord_array;
 	}
 	
@@ -630,6 +619,7 @@ function extenddb_api_device_new($hostrecord_array) {
 
         // do it for Cisco type
 	if( mb_stripos( $hostrecord_array['snmp_sysDescr'], 'cisco') === false ) {
+cacti_log('Exit Extenddb', false, 'EXTENDDB' );
 		return $hostrecord_array;
 	}
 	
@@ -652,6 +642,7 @@ function extenddb_api_device_new($hostrecord_array) {
 
 	sql_save($hostrecord_array, 'host');
 
+cacti_log('Exit Extenddb', false, 'EXTENDDB' );
 	return $hostrecord_array;
 }
 
@@ -925,5 +916,25 @@ function fill_model_db(){
 	);
 }
 
+function data_export () {
+		// export CSV device list
+		$dbquery = db_fetch_assoc("SELECT description, hostname, type, serial_no FROM host 
+		WHERE status = '3' AND disabled != 'on'
+		AND snmp_sysDescr LIKE '%cisco%'
+		ORDER BY id");
+		
+		$stdout = fopen('php://output', 'w');
+
+		header('Content-type: application/excel');
+		header('Content-Disposition: attachment; filename=cacti-devices-type-sn.csv');
+	
+		$header = array_keys($dbquery[0]);
+		fputcsv($stdout, $header);
+
+		foreach($dbquery as $h) {
+			fputcsv($stdout, $h );
+		}
+		fclose($stdout);
+}
 
 ?>
