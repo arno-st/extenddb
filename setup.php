@@ -601,11 +601,13 @@ function extenddb_api_device_new($hostrecord_array) {
 cacti_log('Enter Extenddb', false, 'EXTENDDB' );
 
 	// don't do it for disabled
-	if ($hostrecord_array['disabled'] == 'on' ) {
+	if( array_key_exists('disabled', $hostrecord_array ) ) {
+		if ($hostrecord_array['disabled'] == 'on' ) {
 cacti_log('Exit Extenddb', false, 'EXTENDDB' );
-		return $hostrecord_array;
+			return $hostrecord_array;
+		}
 	}
-	
+
 // host record_array just contain the basic information, need to be pooled for extenddb value
 	$hostrecord_array['snmp_sysDescr'] = db_fetch_cell_prepared('SELECT snmp_sysDescr
 			FROM host
