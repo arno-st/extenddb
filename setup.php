@@ -598,14 +598,17 @@ extdb_log('row: '.$rows .' page:' . get_request_var('page') );
 }
 
 function extenddb_api_device_new($hostrecord_array) {
-cacti_log('Enter Extenddb', false, 'EXTENDDB' );
+//cacti_log('Enter Extenddb', false, 'EXTENDDB' );
 
 	// don't do it for disabled
-	if( array_key_exists('disabled', $hostrecord_array ) ) {
+	if( array_key_exists('disabled', $hostrecord_array ) && array_key_exists('id', $hostrecord_array ) ) {
 		if ($hostrecord_array['disabled'] == 'on' ) {
-cacti_log('Exit Extenddb', false, 'EXTENDDB' );
+//cacti_log('Exit Extenddb', false, 'EXTENDDB' );
 			return $hostrecord_array;
 		}
+	} else {
+		extdb_log('Recu: '. print_r($hostrecord_array, true) );
+		return $hostrecord_array;
 	}
 
 // host record_array just contain the basic information, need to be pooled for extenddb value
@@ -621,7 +624,7 @@ cacti_log('Exit Extenddb', false, 'EXTENDDB' );
 
         // do it for Cisco type
 	if( mb_stripos( $hostrecord_array['snmp_sysDescr'], 'cisco') === false ) {
-cacti_log('Exit Extenddb', false, 'EXTENDDB' );
+//cacti_log('Exit Extenddb', false, 'EXTENDDB' );
 		return $hostrecord_array;
 	}
 	
@@ -644,7 +647,7 @@ cacti_log('Exit Extenddb', false, 'EXTENDDB' );
 
 	sql_save($hostrecord_array, 'host');
 
-cacti_log('Exit Extenddb', false, 'EXTENDDB' );
+//cacti_log('Exit Extenddb', false, 'EXTENDDB' );
 	return $hostrecord_array;
 }
 
