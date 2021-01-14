@@ -24,8 +24,6 @@
 include_once($config['base_path'] . '/plugins/extenddb/ssh2.php');
 include_once($config['base_path'] . '/plugins/extenddb/telnet.php');
 
-//$snmpsysobjid		 = ".1.3.6.1.2.1.1.2.0";
-
 function plugin_extenddb_install () {
 	api_plugin_register_hook('extenddb', 'config_settings', 'extenddb_config_settings', 'setup.php');
 	api_plugin_register_hook('extenddb', 'config_form', 'extenddb_config_form', 'setup.php');
@@ -548,8 +546,6 @@ function extenddb_utilities_action ($action) {
 			LIMIT ' . ($rows*(get_request_var('page')-1)) . ',' . $rows;
 
 		$extenddb_display = db_fetch_assoc($extenddb_display_sql);
-extdb_log('extenddb_display_sql:'.$extenddb_display_sql);
-extdb_log('row: '.$rows .' page:' . get_request_var('page') );
 //SELECT id, hostname, description, serial_no FROM host WHERE type LIKE 'C9200L-24P-4X' ORDER BY description ASC LIMIT 50,50
 
 	/* generate page list */
@@ -598,56 +594,66 @@ extdb_log('row: '.$rows .' page:' . get_request_var('page') );
 }
 
 function extenddb_api_device_new($hostrecord_array) {
-//cacti_log('Enter Extenddb', false, 'EXTENDDB' );
+extdb_log('Enter Extenddb' );
+$snmpsysobjid = ".1.3.6.1.2.1.1.2.0"; // ObjectID
+$snmpsysdescr = ".1.3.6.1.2.1.1.1.0"; // system description
+
+	$host = db_fetch_row("SELECT * FROM host WHERE id=".$hostrecord_array['id']);
 
 	// don't do it for disabled
-	if( array_key_exists('disabled', $hostrecord_array ) && array_key_exists('id', $hostrecord_array ) ) {
-		if ($hostrecord_array['disabled'] == 'on' ) {
-//cacti_log('Exit Extenddb', false, 'EXTENDDB' );
-			return $hostrecord_array;
-		}
-	} else {
-		extdb_log('Recu: '. print_r($hostrecord_array, true) );
+	if ($host['disabled'] == 'on' ) {
+extdb_log('Exit Extenddb Disabled');
 		return $hostrecord_array;
 	}
-
-// host record_array just contain the basic information, need to be pooled for extenddb value
-	$hostrecord_array['snmp_sysDescr'] = db_fetch_cell_prepared('SELECT snmp_sysDescr
-			FROM host
-			WHERE id ='.
-			$hostrecord_array['id']);
-
-	$hostrecord_array['snmp_sysObjectID'] = db_fetch_cell_prepared('SELECT snmp_sysObjectID 
-			FROM host
-			WHERE id ='.
-			$hostrecord_array['id']);
-
-        // do it for Cisco type
-	if( mb_stripos( $hostrecord_array['snmp_sysDescr'], 'cisco') === false ) {
-//cacti_log('Exit Extenddb', false, 'EXTENDDB' );
-		return $hostrecord_array;
+	
+	if( empty($host['snmp_sysObjectID']) ) {
+		// parse device to find snmp_sysObjectID: OID: .1.3.6.1.4.1.9.1.2134
+		// on DB iso.3.6.1.4.1.9.1.2134'
+		$host_data = cacti_snmp_get( $host['hostname'], $host['snmp_community'], $snmpsysobjid, 
+		$host['snmp_version'], $host['snmp_username'], $host['snmp_password'], 
+		$host['snmp_auth_protocol'], $host['snmp_priv_passphrase'], $host['snmp_priv_protocol'],
+		$host['snmp_context'] );
+		
+		$regex = '~.[0-9].*\.([0-9].*)~';
+		preg_match( $regex, $host_data, $result ); // extract the OID of the switch number from the snmp query
+		$host['snmp_sysObjectID'] = 'iso.3.6.1.4.1.9.1.'.$result[1];
+		$hostrecord_array['snmp_sysObjectID'] = $host['snmp_sysObjectID'];
+		extdb_log('host_data:'.$host['snmp_sysObjectID']);
+	
+		$host['snmp_sysDescr'] = cacti_snmp_get( $host['hostname'], $host['snmp_community'], $snmpsysdescr, 
+		$host['snmp_version'], $host['snmp_username'], $host['snmp_password'], 
+		$host['snmp_auth_protocol'], $host['snmp_priv_passphrase'], $host['snmp_priv_protocol'],
+		$host['snmp_context'] );
+		$hostrecord_array['snmp_sysDescr'] = $host['snmp_sysDescr'];
+		extdb_log('host_id:'.$host['snmp_sysDescr']);
+	}
+	
+	// do it for Cisco type
+	if( mb_stripos( $host['snmp_sysDescr'], 'cisco') === false ) {
+extdb_log('Exit Extenddb' );
+		return $host;
 	}
 	
 	if (!isset_request_var('serial_no')) {
-		$hostrecord_array['serial_no'] = form_input_validate(get_filter_request_var('serial_no'), 'serial_no', '', true, 3);
+		$host['serial_no'] = form_input_validate(get_filter_request_var('serial_no'), 'serial_no', '', true, 3);
 	} else {
-		$host_extend_record['serial_no'] = get_SN( $hostrecord_array, $hostrecord_array['snmp_sysObjectID'] );
-		$hostrecord_array['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
+		$host_extend_record['serial_no'] = get_SN( $host, $host['snmp_sysObjectID'] );
+		$host['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
 	}
 	
 	if (!isset_request_var('type'))
-		$hostrecord_array['type'] = form_input_validate(get_filter_request_var('type'), 'type', '', true, 3);
+		$host['type'] = form_input_validate(get_filter_request_var('type'), 'type', '', true, 3);
 	else
-		$hostrecord_array['type'] = get_type( $hostrecord_array );
+		$host['type'] = get_type( $host );
 
 	if (isset_request_var('isPhone'))
-		$hostrecord_array['isPhone'] = form_input_validate(get_filter_request_var('isPhone'), 'isPhone', '', true, 3);
+		$host['isPhone'] = form_input_validate(get_filter_request_var('isPhone'), 'isPhone', '', true, 3);
 	else
-		$hostrecord_array['isPhone'] = form_input_validate('off', 'isPhone', '', true, 3);
+		$host['isPhone'] = form_input_validate('off', 'isPhone', '', true, 3);
 
-	sql_save($hostrecord_array, 'host');
+	sql_save($host, 'host');
 
-//cacti_log('Exit Extenddb', false, 'EXTENDDB' );
+extdb_log('Exit Extenddb' );
 	return $hostrecord_array;
 }
 
