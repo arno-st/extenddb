@@ -594,11 +594,11 @@ function extenddb_utilities_action ($action) {
 }
 
 function extenddb_api_device_new($hostrecord_array) {
-extdb_log('Enter Extenddb' );
 $snmpsysobjid = ".1.3.6.1.2.1.1.2.0"; // ObjectID
 $snmpsysdescr = ".1.3.6.1.2.1.1.1.0"; // system description
 
 	$host = db_fetch_row("SELECT * FROM host WHERE id=".$hostrecord_array['id']);
+extdb_log('Enter Extenddb' );
 
 	// don't do it for disabled
 	if ($host['disabled'] == 'on' ) {
@@ -618,20 +618,20 @@ extdb_log('Exit Extenddb Disabled');
 		preg_match( $regex, $host_data, $result ); // extract the OID of the switch number from the snmp query
 		$host['snmp_sysObjectID'] = 'iso.3.6.1.4.1.9.1.'.$result[1];
 		$hostrecord_array['snmp_sysObjectID'] = $host['snmp_sysObjectID'];
-		extdb_log('host_data:'.$host['snmp_sysObjectID']);
+		extdb_log('host_data: '.$host['snmp_sysObjectID']);
 	
 		$host['snmp_sysDescr'] = cacti_snmp_get( $host['hostname'], $host['snmp_community'], $snmpsysdescr, 
 		$host['snmp_version'], $host['snmp_username'], $host['snmp_password'], 
 		$host['snmp_auth_protocol'], $host['snmp_priv_passphrase'], $host['snmp_priv_protocol'],
 		$host['snmp_context'] );
 		$hostrecord_array['snmp_sysDescr'] = $host['snmp_sysDescr'];
-		extdb_log('host_id:'.$host['snmp_sysDescr']);
+		extdb_log('host_id: '.$host['snmp_sysDescr']);
 	}
 	
 	// do it for Cisco type
 	if( mb_stripos( $host['snmp_sysDescr'], 'cisco') === false ) {
-extdb_log('Exit Extenddb' );
-		return $host;
+extdb_log('Exit Extenddb not cisco' );
+		return $hostrecord_array;
 	}
 	
 	if (!isset_request_var('serial_no')) {
@@ -653,7 +653,7 @@ extdb_log('Exit Extenddb' );
 
 	sql_save($host, 'host');
 
-extdb_log('Exit Extenddb' );
+extdb_log('End Extenddb' );
 	return $hostrecord_array;
 }
 
