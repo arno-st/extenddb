@@ -597,8 +597,19 @@ function extenddb_api_device_new($hostrecord_array) {
 $snmpsysobjid = ".1.3.6.1.2.1.1.2.0"; // ObjectID
 $snmpsysdescr = ".1.3.6.1.2.1.1.1.0"; // system description
 
+// check valid call
+	if( !array_key_exists('disabled', $hostrecord_array ) || !array_key_exists('id', $hostrecord_array) ) {
+		extdb_log('Not valid call: '. print_r($hostrecord_array, true) );
+		return $hostrecord_array;
+	}
+
+	// check valid id
 	$host = db_fetch_row("SELECT * FROM host WHERE id=".$hostrecord_array['id']);
-extdb_log('Enter Extenddb' );
+	if( empty($host) ){
+		extdb_log('Wrong id in Extenddb:'. print_r($hostrecord_array, true) );
+		return $hostrecord_array;
+	}
+extdb_log('Enter Extenddb:'.$host['description'].'('.$hostrecord_array['id'].')' );
 
 	// don't do it for disabled
 	if ($host['disabled'] == 'on' ) {
