@@ -598,22 +598,24 @@ $snmpsysobjid = ".1.3.6.1.2.1.1.2.0"; // ObjectID
 $snmpsysdescr = ".1.3.6.1.2.1.1.1.0"; // system description
 
 // check valid call
-	if( !array_key_exists('disabled', $hostrecord_array ) || !array_key_exists('id', $hostrecord_array) ) {
+	if( !array_key_exists('disabled', $hostrecord_array ) ) {
 		extdb_log('Not valid call: '. print_r($hostrecord_array, true) );
 		return $hostrecord_array;
 	}
 
-	// check valid id
-	$host = db_fetch_row("SELECT * FROM host WHERE id=".$hostrecord_array['id']);
+	// get valid host from DB
+	$host = db_fetch_row("SELECT * FROM host WHERE hostname='".$hostrecord_array['hostname']."'");
+	extdb_log('return from query:'. print_r($host, true) );
 	if( empty($host) ){
-		extdb_log('Wrong id in Extenddb:'. print_r($hostrecord_array, true) );
+		extdb_log('Wrong hostname in Extenddb:'. print_r($hostrecord_array, true) );
 		return $hostrecord_array;
 	}
-extdb_log('Enter Extenddb:'.$host['description'].'('.$hostrecord_array['id'].')' );
+	
+extdb_log('Enter Extenddb:'.print_r($hostrecord_array, true) );
 
-	// don't do it for disabled
-	if ($host['disabled'] == 'on' ) {
-extdb_log('Exit Extenddb Disabled');
+	// don't do it for disabled and no snmp
+	if ($host['disabled'] == 'on' || $host['snmp_version'] == 0 ) {
+extdb_log('Exit Extenddb Disabled or no snmp');
 		return $hostrecord_array;
 	}
 	
