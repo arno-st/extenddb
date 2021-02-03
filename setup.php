@@ -597,6 +597,8 @@ function extenddb_api_device_new($hostrecord_array) {
 $snmpsysobjid = ".1.3.6.1.2.1.1.2.0"; // ObjectID
 $snmpsysdescr = ".1.3.6.1.2.1.1.1.0"; // system description
 
+extdb_log('Enter Extenddb:'.$hostrecord_array['description'] );
+
 // check valid call
 	if( !array_key_exists('disabled', $hostrecord_array ) ) {
 		extdb_log('Not valid call: '. print_r($hostrecord_array, true) );
@@ -605,13 +607,16 @@ $snmpsysdescr = ".1.3.6.1.2.1.1.1.0"; // system description
 
 	// get valid host from DB
 	$host = db_fetch_row("SELECT * FROM host WHERE hostname='".$hostrecord_array['hostname']."'");
-	extdb_log('return from query:'. print_r($host, true) );
 	if( empty($host) ){
-		extdb_log('Wrong hostname in Extenddb:'. print_r($hostrecord_array, true) );
+		extdb_log('Unknown hostname in Extenddb:'. print_r($hostrecord_array, true) );
 		return $hostrecord_array;
 	}
 	
-extdb_log('Enter Extenddb:'.print_r($hostrecord_array, true) );
+	// don't do it for disabled and no snmp
+	if ($host['isPhone'] == 'On' ) {
+extdb_log('Exit Extenddb skip for phone');
+		return $hostrecord_array;
+	}
 
 	// don't do it for disabled and no snmp
 	if ($host['disabled'] == 'on' || $host['snmp_version'] == 0 ) {
@@ -646,27 +651,15 @@ extdb_log('Exit Extenddb Disabled or no snmp');
 extdb_log('Exit Extenddb not cisco' );
 		return $hostrecord_array;
 	}
-	
-	if (!isset_request_var('serial_no')) {
-		$host['serial_no'] = form_input_validate(get_filter_request_var('serial_no'), 'serial_no', '', true, 3);
-	} else {
-		$host_extend_record['serial_no'] = get_SN( $host, $host['snmp_sysObjectID'] );
-		$host['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
-	}
-	
-	if (!isset_request_var('type'))
-		$host['type'] = form_input_validate(get_filter_request_var('type'), 'type', '', true, 3);
-	else
-		$host['type'] = get_type( $host );
 
-	if (isset_request_var('isPhone'))
-		$host['isPhone'] = form_input_validate(get_filter_request_var('isPhone'), 'isPhone', '', true, 3);
-	else
-		$host['isPhone'] = form_input_validate('off', 'isPhone', '', true, 3);
+	$host_extend_record['serial_no'] = get_SN( $host, $host['snmp_sysObjectID'] );
+	$host['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
+
+	$host['type'] = get_type( $host );
 
 	sql_save($host, 'host');
 
-extdb_log('End Extenddb' );
+extdb_log('End Extenddb: '.$host['type'].'-'.$host['serial_no'] );
 	return $hostrecord_array;
 }
 
@@ -720,8 +713,7 @@ function get_type( $hostrecord_array ) {
 	$hostrecord_array['snmp_context'] );
 
 	if( empty($data_model) ) {
-		$text = "Can t find model No for : " . $hostrecord_array['description'].'(oid:'.$hostrecord_array['snmp_sysObjectID'].') at: '. $oid_model;
-		cacti_log( $text, false, "EXTENDDB" );
+		extdb_log( "Can t find model No for : " . $hostrecord_array['description'].'(oid:'.$hostrecord_array['snmp_sysObjectID'].') at: '. $oid_model);
 	}
 
 	return $data_model;
@@ -762,8 +754,7 @@ function get_SN( $hostrecord_array, $SysObjId ){
 			$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
 			$hostrecord_array['snmp_context'] );
 			if( empty($serialno) ) {
-				$text = "Can t find serial No for : " . $hostrecord_array['description'] .'(oid:'.$hostrecord_array['snmp_sysObjectID'].') at: '. $snmpserialno;
-				cacti_log( $text, false, "EXTENDDB" );
+				extdb_log("Can t find serial No for : " . $hostrecord_array['description'] .'(oid:'.$hostrecord_array['snmp_sysObjectID'].') at: '. $snmpserialno );
 			}
 		} else {
 			foreach( $vssnumber as $stackitem ) {
