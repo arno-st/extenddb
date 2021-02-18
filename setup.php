@@ -606,7 +606,7 @@ extdb_log('Enter Extenddb:'.$hostrecord_array['description'] );
 	}
 
 	// get valid host from DB
-	$host = db_fetch_row("SELECT * FROM host WHERE hostname='".$hostrecord_array['hostname']."'");
+	$host = db_fetch_row("SELECT * FROM host WHERE hostname='".$hostrecord_array['hostname']."' OR description='".$hostrecord_array['description']."'");
 	if( empty($host) ){
 		extdb_log('Unknown hostname in Extenddb:'. print_r($hostrecord_array, true) );
 		return $hostrecord_array;
