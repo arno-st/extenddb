@@ -54,7 +54,7 @@ switch (get_request_var('action')) {
 
 function display_type_db() {
     global $config, $item_rows, $extenddb_actions;
-// snmp_SysObjectId, oid_model, oid_sn, model
+// snmp_SysObjectId, oid_model, oid_sn, model, mode
 	/* ================= input validation and session storage ================= */
 	$filters = array(
 		'rows' => array(

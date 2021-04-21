@@ -43,7 +43,7 @@ function create_ssh($deviceid) {
 	if($stream !== false){
 		$data = ssh_read_stream($stream );
 		if( $data === false ){
-			ciscotools_log( 'Erreur can\'t read login prompt');
+			extdb_log( 'Erreur can\'t read login prompt');
 			return false;
 		}
 	}
@@ -87,10 +87,11 @@ function ssh_read_stream($stream) {
      } while ( !feof($stream) && $stream_out !== false && $stream_out != '#');
    
     if(strlen($output)!=0) {
+	extdb_log('SSH read stream: '.$output);
         return $output;
     }
     
-    ciscotools_log('ssh_read_stream - Error - No output');
+    extdb_log('ssh_read_stream - Error - No output');
     return false;
 }
 
@@ -98,5 +99,6 @@ function ssh_write_stream( $stream, $cmd){
     do {
         $write = fwrite( $stream, $cmd.PHP_EOL );
 	} while( $write < strlen($cmd) );
+	extdb_log('SSH write stream: '.print_r($cmd, true));
 }
 ?>
