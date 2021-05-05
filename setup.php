@@ -42,7 +42,7 @@ function plugin_extenddb_uninstall () {
 	// Do any extra Uninstall stuff here
 
 	// Remove items from the settings table
-	db_execute('ALTER TABLE host DROP COLUMN serial_no, DROP COLUMN type, DROP COLUMN isPhone');
+	db_execute('ALTER TABLE host DROP COLUMN serial_no, DROP COLUMN model, DROP COLUMN isPhone');
 }
 
 function plugin_extenddb_check_config () {
@@ -108,6 +108,10 @@ function extenddb_check_upgrade() {
 		}
 		if( $old < '1.3.4' ) {
 		}
+		if( $old < '1.3.5' ) {
+			// change the name of the switch type to model, to be more coherent between plugin
+			db_execute('ALTER TABLE host CHANGE type model CHAR(50)');
+		}
 	}
 	fill_model_db(); // place where new device are added
 }
@@ -133,12 +137,12 @@ function extenddb_config_form () {
 				'value' => '|arg1:serial_no|',
 				'default' => '',
 			);
-			$fields_host_edit3['type'] = array(
-				'friendly_name' => 'Type',
-				'description' => 'This is the type of equipement.',
+			$fields_host_edit3['model'] = array(
+				'friendly_name' => 'Model',
+				'description' => 'This is the model of equipement.',
 				'method' => 'textbox',
 				'max_length' => 50,
-				'value' => '|arg1:type|',
+				'value' => '|arg1:model|',
 				'default' => '',
 			);
 			$fields_host_edit3['isPhone'] = array(
@@ -159,10 +163,10 @@ function extenddb_utilities_list () {
 	form_alternate_row();
 	?>
 		<td class="textArea">
-			<a href='utilities.php?action=extenddb_complete'>Complete Serial Number and Type.</a>
+			<a href='utilities.php?action=extenddb_complete'>Complete Serial Number and Model.</a>
 		</td>
 		<td class="textArea">
-			Complete Serial Number anb Type of all non filed device.
+			Complete Serial Number anb Model of all non filed device.
 		</td>
 	<?php
 	form_end_row();
@@ -172,27 +176,27 @@ function extenddb_utilities_list () {
 			<a href='utilities.php?action=extenddb_rebuild'>Recheck All Cisco Device.</a>
 		</td>
 		<td class="textArea">
-			Build Serial Number anb Type of All Cisco Device.
+			Build Serial Number anb Model of All Cisco Device.
 		</td>
 	<?php
 	form_end_row();
 	form_alternate_row();
 	?>
 		<td class="textArea">
-			<a href='<?php print $config['url_path'] . 'plugins/extenddb/'?>extenddb_type.php?action=display_type_db'>Edit the ExtendDB table.</a>
+			<a href='<?php print $config['url_path'] . 'plugins/extenddb/'?>extenddb_type.php?action=display_model_db'>Edit the ExtendDB table.</a>
 		</td>
 		<td class="textArea">
-			Change, add or remove a type entry on the ExtendDB table.
+			Change, add or remove a model entry on the ExtendDB table.
 		</td>
 	<?php
 	form_end_row();
 	form_alternate_row();
-		print "<td class='nowrap' style='vertical-align:top;'> <a class='hyperLink' href='utilities.php?action=extenddb_count'>ExtendDB type count</a></td>\n";
-		print "<td>Count the number of each device type.</td>\n";
+		print "<td class='nowrap' style='vertical-align:top;'> <a class='hyperLink' href='utilities.php?action=extenddb_count'>ExtendDB model count</a></td>\n";
+		print "<td>Count the number of each device model.</td>\n";
 	form_end_row();
 	form_alternate_row();
-		print "<td class='nowrap' style='vertical-align:top;'> <a class='hyperLink' href='utilities.php?action=extenddb_export_type_SN'>ExtendDB Export Type and SN</a></td>\n";
-		print "<td>Export in CSV format, the type and SN of all active device.</td>\n";
+		print "<td class='nowrap' style='vertical-align:top;'> <a class='hyperLink' href='utilities.php?action=extenddb_export_model_SN'>ExtendDB Export Model and SN</a></td>\n";
+		print "<td>Export in CSV format, the model and SN of all active device.</td>\n";
 	form_end_row();
 
 }
@@ -202,20 +206,20 @@ function extenddb_utilities_action ($action) {
 	
 	if ( $action == 'extenddb_complete' || $action == 'extenddb_rebuild' ){
 		if ($action == 'extenddb_complete') {
-	// get device list,  where serial number is empty, or type
+	// get device list,  where serial number is empty, or model
 			$dbquery = db_fetch_assoc("SELECT * FROM host 
-			WHERE (serial_no is NULL OR type IS NULL OR serial_no = '' OR type = '')
+			WHERE (serial_no is NULL OR model IS NULL OR serial_no = '' OR model = '')
 			AND status = '3' AND disabled != 'on'
 			AND snmp_sysDescr LIKE '%cisco%'
 			ORDER BY id");
 		// Upgrade the extenddb value
 			if( $dbquery > 0 ) {
 				foreach ($dbquery as $host) {
-					update_sn_type( $host );
+					update_sn_model( $host );
 				}
 			}
 		} else if ($action == 'extenddb_rebuild') {
-	// get device list,  where serial number is empty, or type
+	// get device list,  where serial number is empty, or model
 			$dbquery = db_fetch_assoc("SELECT  * FROM host 
 			WHERE status = '3' AND disabled != 'on'
 			AND snmp_sysDescr LIKE '%cisco%'
@@ -223,14 +227,14 @@ function extenddb_utilities_action ($action) {
 		// Upgrade the extenddb value
 			if( $dbquery > 0 ) {
 				foreach ($dbquery as $host) {
-					update_sn_type( $host );
+					update_sn_model( $host );
 				}
 			}
 		}
 		top_header();
 		utilities();
 		bottom_footer();
-	} else if ($action == 'extenddb_export_type_SN') {
+	} else if ($action == 'extenddb_export_model_SN') {
 		data_export();
 	} elseif ($action == 'extenddb_count') {
 		top_header();
@@ -302,18 +306,18 @@ function extenddb_utilities_action ($action) {
 				clearFilter();
 			});
 
-			$('#count_type').submit(function(event) {
+			$('#count_model').submit(function(event) {
 				event.preventDefault();
 				applyFilter();
 			});
 		});
 		</script>
 		<?php
-		html_start_box(__('Extenddb Device Type'), '100%', '', '3', 'center', '');
+		html_start_box(__('Extenddb Device model'), '100%', '', '3', 'center', '');
 		?>
 		<tr class='even noprint'>
 			<td>
-			<form id='count_type' action='utilities.php'>
+			<form id='count_model' action='utilities.php'>
 				<table class='filterTable'>
 					<tr>
 						<td>
@@ -352,19 +356,19 @@ function extenddb_utilities_action ($action) {
 		<?php
 		html_end_box();
 
-	// sql query: SELECT type,COUNT(1) as occurence FROM host where type LIKE "C9200" GROUP BY type ORDER BY occurence
+	// sql query: SELECT model,COUNT(1) as occurence FROM host where model LIKE "C9200" GROUP BY model ORDER BY occurence
 		$sql_where = '';
 
 	/* filter by search string */
 		if (get_request_var('filter') != '') {
-			$sql_where .= ' WHERE type LIKE ' . db_qstr('%' . get_request_var('filter') . '%');
+			$sql_where .= ' WHERE model LIKE ' . db_qstr('%' . get_request_var('filter') . '%');
 		}
 
-		$total_rows = db_fetch_cell("SELECT COUNT(DISTINCT(type)) FROM host". $sql_where);
+		$total_rows = db_fetch_cell("SELECT COUNT(DISTINCT(model)) FROM host". $sql_where);
 		
-		$sql_where .= ' GROUP BY type ';
+		$sql_where .= ' GROUP BY model ';
 
-		$extenddb_count_sql = "SELECT type,COUNT(1) as occurence FROM host 
+		$extenddb_count_sql = "SELECT model,COUNT(1) as occurence FROM host 
 			$sql_where 
 			ORDER BY " . get_request_var('sort_column') . ' ' . get_request_var('sort_direction') . '
 			LIMIT ' . ($rows*(get_request_var('page')-1)) . ',' . $rows;
@@ -379,16 +383,16 @@ function extenddb_utilities_action ($action) {
 		html_start_box('', '100%', '', '3', 'center', '');
 
 		$display_text = array(
-		'type' => array(__('Device Type'), 'ASC'),
+		'model' => array(__('Device model'), 'ASC'),
 		'occurence' => array(__('Number of Occurence'), 'ASC'));
 
 		html_header_sort($display_text, get_request_var('sort_column'), get_request_var('sort_direction'), 1, 'utilities.php?action=extenddb_count');
 
 		if (cacti_sizeof($extenddb_count)) {
 			foreach ($extenddb_count as $item) {
-				if( empty($item['type']) ) $item['type'] = 'empty';
-				form_alternate_row('line' . $item['type'], false);
-				form_selectable_cell(filter_value($item['type'], get_request_var('filter'), 'utilities.php?action=extenddb_display&sort_column=description&model=' . $item['type']), $item['type']);
+				if( empty($item['model']) ) $item['model'] = 'empty';
+				form_alternate_row('line' . $item['model'], false);
+				form_selectable_cell(filter_value($item['model'], get_request_var('filter'), 'utilities.php?action=extenddb_display&sort_column=description&model=' . $item['model']), $item['model']);
 				form_selectable_cell(filter_value($item['occurence'], get_request_var('filter')), $item['occurence']);
 				form_end_row();
 			}
@@ -412,7 +416,7 @@ function extenddb_utilities_action ($action) {
 	<?php
 	} elseif ($action == 'extenddb_display') {
 		top_header();
-// Show list of a specific type
+// Show list of a specific model
 	/* ================= input validation and session storage ================= */
 		$filters = array(
 			'rows' => array(
@@ -484,19 +488,19 @@ function extenddb_utilities_action ($action) {
 				clearFilter();
 			});
 
-			$('#display_type').submit(function(event) {
+			$('#model').submit(function(event) {
 				event.preventDefault();
 				applyFilter();
 			});
 		});
 		</script>
 		<?php
-		html_start_box(__('Extenddb Device Type'), '100%', '', '3', 'center', '');
+		html_start_box(__('Extenddb Device model'), '100%', '', '3', 'center', '');
 		?>
 		<tr class='even noprint'>
 		<id='model' value=<?php print (get_request_var('model'))?> >
 			<td>
-			<form id='display_type' action='utilities.php'>
+			<form id='model' action='utilities.php'>
 				<table class='filterTable'>
 					<tr>
 						<td>
@@ -538,7 +542,7 @@ function extenddb_utilities_action ($action) {
 		$sql_where = '';
 
 	/* filter by search string */
-		$sql_where .= ' WHERE type LIKE ' . db_qstr('' . get_request_var('model') . '');
+		$sql_where .= ' WHERE model LIKE ' . db_qstr('' . get_request_var('model') . '');
 
 		$total_rows = db_fetch_cell("SELECT COUNT(*) FROM host ".$sql_where);
 		
@@ -548,7 +552,7 @@ function extenddb_utilities_action ($action) {
 			LIMIT ' . ($rows*(get_request_var('page')-1)) . ',' . $rows;
 
 		$extenddb_display = db_fetch_assoc($extenddb_display_sql);
-//SELECT id, hostname, description, serial_no FROM host WHERE type LIKE 'C9200L-24P-4X' ORDER BY description ASC LIMIT 50,50
+//SELECT id, hostname, description, serial_no FROM host WHERE model LIKE 'C9200L-24P-4X' ORDER BY description ASC LIMIT 50,50
 
 	/* generate page list */
 		$nav = html_nav_bar('utilities.php?action=extenddb_display&filter=' . get_request_var('filter').'&model='.get_request_var('model'), MAX_DISPLAY_PAGES, get_request_var('page'), $rows, $total_rows, 11, __('Entries'), 'page', 'main');
@@ -648,7 +652,7 @@ extdb_log('Exit Extenddb Disabled or no snmp');
 		extdb_log('host_id: '.$host['snmp_sysDescr']);
 	}
 	
-	// do it for Cisco type
+	// do it for Cisco model
 	if( mb_stripos( $host['snmp_sysDescr'], 'cisco') === false ) {
 extdb_log('Exit Extenddb not cisco' );
 		return $hostrecord_array;
@@ -657,11 +661,11 @@ extdb_log('Exit Extenddb not cisco' );
 	$host_extend_record['serial_no'] = get_SN( $host, $host['snmp_sysObjectID'] );
 	$host['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
 
-	$host['type'] = get_type( $host );
+	$host['model'] = get_model( $host );
 
 	sql_save($host, 'host');
 
-extdb_log('End Extenddb: '.$host['type'].'-'.$host['serial_no'] );
+extdb_log('End Extenddb: '.$host['model'].'-'.$host['serial_no'] );
 	return $hostrecord_array;
 }
 
@@ -698,7 +702,7 @@ function extenddb_check_dependencies() {
 	return true;
 }
 
-function get_type( $hostrecord_array ) {
+function get_model( $hostrecord_array ) {
 //snmp_SysObjectId, oid_model, oid_sn, model
 	$sqlquery = "SELECT * FROM plugin_extenddb_model WHERE snmp_SysObjectId='".$hostrecord_array['snmp_sysObjectID']."'";
 
@@ -796,7 +800,7 @@ function get_SN( $hostrecord_array, $SysObjId ){
 }
 
 function extenddb_device_action_array($device_action_array) {
-    $device_action_array['fill_extenddb'] = __('Scan for type and Serial');
+    $device_action_array['fill_extenddb'] = __('Scan for model and Serial');
         return $device_action_array;
 }
 
@@ -814,7 +818,7 @@ function extenddb_device_action_execute($action) {
 				if ($action == 'fill_extenddb') {
 					$dbquery = db_fetch_assoc("SELECT * FROM host WHERE id=".$hostid);
 extdb_log("Fill ExtendDB value: ".$hostid." - ".print_r($dbquery[0])." - ".$dbquery[0]['description']."\n");
-					update_sn_type( $dbquery[0], true );
+					update_sn_model( $dbquery[0], true );
 				}
 			}
 		}
@@ -833,7 +837,7 @@ function extenddb_device_action_prepare($save) {
     }
 
     if ($action == 'fill_extenddb' ) {
-		$action_description = 'Scan for type and Serial';
+		$action_description = 'Scan for model and Serial';
 			print "<tr>
                     <td colspan='2' class='even'>
                             <p>" . __('Click \'Continue\' to %s on these Device(s)', $action_description) . "</p>
@@ -844,7 +848,7 @@ function extenddb_device_action_prepare($save) {
 	return $save;
 }
 
-function update_sn_type( $hostrecord_array, $force=false ) {
+function update_sn_model( $hostrecord_array, $force=false ) {
 	if( $hostrecord_array['status']!= '3' and !$force) {
 	extdb_log('Host not up: '.$hostrecord_array['description']);
 	// host down do nothing
@@ -859,13 +863,13 @@ function update_sn_type( $hostrecord_array, $force=false ) {
 		}
 		
 		$hostrecord_array['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
-		$hostrecord_array['type'] = get_type( $hostrecord_array );
-		if( $hostrecord_array['type'] == 'U' ) {
-			extdb_log('can t SNMP read type of ' . $hostrecord_array['description'] );
+		$hostrecord_array['model'] = get_model( $hostrecord_array );
+		if( $hostrecord_array['model'] == 'U' ) {
+			extdb_log('can t SNMP read model of ' . $hostrecord_array['description'] );
 			return;
 		}
 	extdb_log('SN: ' . $hostrecord_array['serial_no'] );
-	extdb_log('type: ' . $hostrecord_array['type'] );
+	extdb_log('model: ' . $hostrecord_array['model'] );
 
 	sql_save($hostrecord_array, 'host');
 }
@@ -944,7 +948,7 @@ function fill_model_db(){
 
 function data_export () {
 		// export CSV device list
-		$dbquery = db_fetch_assoc("SELECT description, hostname, type, serial_no FROM host 
+		$dbquery = db_fetch_assoc("SELECT description, hostname, model, serial_no FROM host 
 		WHERE status = '3' AND disabled != 'on'
 		AND snmp_sysDescr LIKE '%cisco%'
 		ORDER BY id");

@@ -87,7 +87,6 @@ function ssh_read_stream($stream) {
      } while ( !feof($stream) && $stream_out !== false && $stream_out != '#');
    
     if(strlen($output)!=0) {
-	extdb_log('SSH read stream: '.$output);
         return $output;
     }
     
@@ -99,6 +98,5 @@ function ssh_write_stream( $stream, $cmd){
     do {
         $write = fwrite( $stream, $cmd.PHP_EOL );
 	} while( $write < strlen($cmd) );
-	extdb_log('SSH write stream: '.print_r($cmd, true));
 }
 ?>

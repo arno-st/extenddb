@@ -28,18 +28,18 @@ $extenddb_actions = array(
 	2 => __('Duplicate')
 );
 
-set_default_action('display_type_db');
+set_default_action('display_model_db');
 
 switch (get_request_var('action')) {
-	case 'display_type_db':
+	case 'display_model_db':
 		top_header();
-		display_type_db();
+		display_model_db();
 		bottom_footer();
 		break;
 		
-	case 'edit_type':
+	case 'edit_model':
 		top_header();
-		edit_type_db();
+		edit_model_db();
 		bottom_footer();
 		break;
 					
@@ -48,11 +48,11 @@ switch (get_request_var('action')) {
 		break;
 
 	case 'save':
-		extenddb_type_form_save();
+		extenddb_model_form_save();
 		break;
 }
 
-function display_type_db() {
+function display_model_db() {
     global $config, $item_rows, $extenddb_actions;
 // snmp_SysObjectId, oid_model, oid_sn, model, mode
 	/* ================= input validation and session storage ================= */
@@ -82,7 +82,7 @@ function display_type_db() {
 		$rows = get_request_var('rows');
 	}
 		$refresh['seconds'] = '300';
-		$refresh['page']    = 'extenddb_type.php?action=display_type_db&header=false';
+		$refresh['page']    = 'extenddb_type.php?action=display_model_db&header=false';
 		$refresh['logout']  = 'false';
 
 		set_page_refresh($refresh);
@@ -91,7 +91,7 @@ function display_type_db() {
 	<script type="text/javascript">
 
 	function applyFilter() {
-		strURL  = 'extenddb_type.php?action=display_type_db';
+		strURL  = 'extenddb_type.php?action=display_model_db';
 		strURL += '&rows=' + $('#rows').val();
 		strURL += '&header=false';
 		if ($('#model') ) {
@@ -101,7 +101,7 @@ function display_type_db() {
 	}
 
 	function clearFilter() {
-		strURL = 'extenddb_type.php?action=display_type_db&clear=1&header=false';
+		strURL = 'extenddb_type.php?action=display_model_db&clear=1&header=false';
 		loadPageNoHeader(strURL);
 	}
 	$(function() {
@@ -120,7 +120,7 @@ function display_type_db() {
 	});
 		</script>
 		<?php
-		html_start_box(__('ExtendDB Device Type'), '100%', '', '3', 'center', 'extenddb_type.php?action=edit_type');
+		html_start_box(__('ExtendDB Device model'), '100%', '', '3', 'center', 'extenddb_type.php?action=edit_model');
 		?>
 		<tr class='even noprint'>
 			<td>
@@ -193,7 +193,7 @@ function display_type_db() {
     $result = db_fetch_assoc($sql_query);
 
 /* generate page list */
-	$nav = html_nav_bar('extenddb_type.php?action=display_type_db&model=' . get_request_var('model'), MAX_DISPLAY_PAGES, get_request_var('page'), $per_row, $total_rows);
+	$nav = html_nav_bar('extenddb_type.php?action=display_model_db&model=' . get_request_var('model'), MAX_DISPLAY_PAGES, get_request_var('page'), $per_row, $total_rows);
 
 	form_start('extenddb_type.php');
 
@@ -210,7 +210,7 @@ function display_type_db() {
 			$model = filter_value($item['model'], get_request_var('model'));
 			form_alternate_row('line' . $item['id'], false);
 
-				print '<td><a href="' . html_escape('extenddb_type.php?action=edit_type&id=' . 
+				print '<td><a href="' . html_escape('extenddb_type.php?action=edit_model&id=' . 
 				$item['id']) . '">' . $item['model'] . '</a>'.'</td>';
 
 				form_selectable_cell($item['snmp_SysObjectId'], $item['snmp_SysObjectId']);
@@ -246,7 +246,7 @@ function extenddb_form_actions() {
 					header('Location: extenddb_type.php?header=false');
 				} elseif (get_nfilter_request_var('drp_action') == '2') { // duplicate
 					if( count($selected_items) > 1 ){
-						display_custom_error_message( 'Only one Model Type can be duplicated at time' );
+						display_custom_error_message( 'Only one Model can be duplicated at time' );
 						header('Location: extenddb_type.php?header=false');
 					}
 					else {
@@ -254,12 +254,12 @@ function extenddb_form_actions() {
 						$sql_query = "SELECT * from plugin_extenddb_model WHERE id='".$selected_item."'";
 						$item = db_fetch_row_prepared($sql_query);
 						extdb_log('query:' .$sql_query);
-						$edit_type_db['model'] = $item['model'];
-						$edit_type_db['snmp_SysObjectId'] = $item['snmp_SysObjectId'];
-						$edit_type_db['oid_model'] = $item['oid_model'];
-						$edit_type_db['oid_sn'] = $item['oid_sn'];
+						$edit_model_db['model'] = $item['model'];
+						$edit_model_db['snmp_SysObjectId'] = $item['snmp_SysObjectId'];
+						$edit_model_db['oid_model'] = $item['oid_model'];
+						$edit_model_db['oid_sn'] = $item['oid_sn'];
 						
-						edit_type_db($edit_type_db);
+						edit_model_db($edit_model_db);
 					}
 				}
 				exit;
@@ -272,7 +272,7 @@ function extenddb_form_actions() {
 			$list = '';
 			foreach($_POST as $key => $value) {
 				if (strstr($key, 'chk_')) {
-					/* grep type's id */
+					/* grep model's id */
 					$id = substr($key, 4);
 					/* ================= input validation ================= */
 					input_validate_input_number($id);
@@ -290,9 +290,9 @@ function extenddb_form_actions() {
 
 			if (cacti_sizeof($selected_items)) {
 				if (get_nfilter_request_var('drp_action') == '1') { // delete
-					$msg = __n('Click \'Continue\' to delete the following Model Type', 'Click \'Continue\' to delete following Model Type', cacti_sizeof($selected_items));
+					$msg = __n('Click \'Continue\' to delete the following Model model', 'Click \'Continue\' to delete following Model model', cacti_sizeof($selected_items));
 				} elseif (get_nfilter_request_var('drp_action') == '2') { // duplicate
-					$msg = __n('Click \'Continue\' to duplicate the following Model Type', 'Click \'Continue\' to duplicate following Model Type', cacti_sizeof($selected_items));
+					$msg = __n('Click \'Continue\' to duplicate the following Model model', 'Click \'Continue\' to duplicate following Model model', cacti_sizeof($selected_items));
 				}
 
 				print "<tr>
@@ -302,7 +302,7 @@ function extenddb_form_actions() {
 					</td>
 				</tr>";
 
-				$save_html = "<input type='button' class='ui-button ui-corner-all ui-widget' value='" . __esc('Cancel') . "' onClick='cactiReturnTo()'><input type='submit' class='ui-button ui-corner-all ui-widget' value='" . __esc('Continue') . "' title='" . __esc('%s Model Type', $extenddb_actions[get_nfilter_request_var('drp_action')]) . "'>";
+				$save_html = "<input type='button' class='ui-button ui-corner-all ui-widget' value='" . __esc('Cancel') . "' onClick='cactiReturnTo()'><input type='submit' class='ui-button ui-corner-all ui-widget' value='" . __esc('Continue') . "' title='" . __esc('%s Model', $extenddb_actions[get_nfilter_request_var('drp_action')]) . "'>";
 			} else {
 				raise_message(40);
 				header('Location: extenddb_type.php?header=false');
@@ -328,7 +328,7 @@ function extenddb_form_actions() {
 	}
 }
 
-function edit_type_db($extdb_type=null) {
+function edit_model_db($extdb_model=null) {
 // snmp_SysObjectId, oid_model, oid_sn, model
 	global $config;
 
@@ -352,7 +352,7 @@ function edit_type_db($extdb_type=null) {
 		'oid_model' => array(
 			'method' => 'textbox',
 			'friendly_name' => __('SNMP OID model'),
-			'description' => __('SNMP OID to get the model type.'),
+			'description' => __('SNMP OID to get the model.'),
 			'value' => '|arg1:oid_model|',
 			'max_length' => '64',
 			'size' => 64
@@ -378,10 +378,10 @@ function edit_type_db($extdb_type=null) {
 	$id	= (isset_request_var('id') ? get_request_var('id') : '0');
 
 	if ($id) {
-		$extdb_type = db_fetch_row_prepared('SELECT * FROM plugin_extenddb_model WHERE id = ?', array($id));
-		$header_label = __esc('ExtendDB Device type [edit: %s - %s]', $extdb_type['model'], $extdb_type['snmp_SysObjectId']);
+		$extdb_model = db_fetch_row_prepared('SELECT * FROM plugin_extenddb_model WHERE id = ?', array($id));
+		$header_label = __esc('ExtendDB Device model [edit: %s - %s]', $extdb_model['model'], $extdb_model['snmp_SysObjectId']);
 	} else {
-		$header_label = __('ExtendDB Device type [new]');
+		$header_label = __('ExtendDB Device model [new]');
 	}
 
 	form_start('extenddb_type.php');
@@ -391,7 +391,7 @@ function edit_type_db($extdb_type=null) {
 	draw_edit_form(
 		array(
 			'config' => array('no_form_tag' => true),
-			'fields' => inject_form_variables($fields_extdb_edit, (isset($extdb_type) ? $extdb_type : array()))
+			'fields' => inject_form_variables($fields_extdb_edit, (isset($extdb_model) ? $extdb_model : array()))
 		)
 	);
 
@@ -400,7 +400,7 @@ function edit_type_db($extdb_type=null) {
 	form_save_button('extenddb_type.php', 'return');
 }
 
-function extenddb_type_form_save() {
+function extenddb_model_form_save() {
 	$save['id']					= get_request_var('id');
 	$save['model']				= form_input_validate(trim(get_nfilter_request_var('model')), 'model', '', false, 3);
 	$save['snmp_SysObjectId']	= form_input_validate(trim(get_nfilter_request_var('snmp_SysObjectId')), 'snmp_SysObjectId', '', false, 3);
@@ -413,7 +413,7 @@ function extenddb_type_form_save() {
 		$extenddb_model_id = sql_save($save, 'plugin_extenddb_model');
 		raise_message( ($extenddb_model_id)? 1 : 2 );
 	}
-//	header('Location: extenddb_type.php?action=edit_type&header=false&id=' . (empty($extenddb_model_id) ? get_nfilter_request_var('id') : $extenddb_model_id) );
+//	header('Location: extenddb_type.php?action=edit_model&header=false&id=' . (empty($extenddb_model_id) ? get_nfilter_request_var('id') : $extenddb_model_id) );
 	header('Location: extenddb_type.php?header=false' );
 
 }
