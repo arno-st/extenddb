@@ -57,7 +57,7 @@ function open_telnet( $hostname, $username, $password ) {
         return false;
     }
 
-	stream_set_timeout($connection, 210);
+	stream_set_timeout($connection, 5); // 5sec timeout
 	stream_set_blocking($connection, true);
 
 	// Username prompt
@@ -91,8 +91,13 @@ function telnet_read_stream($stream, $term='#') {
 	$output = '';
 	
     do {
-		$stream_out = fread ($stream, 1);
+		$stream_out = @fread ($stream, 1);
         //ciscotools_log('stream read: >'.$stream_out.'<('.strlen($stream_out).')'.' hex:'.bin2hex($stream_out));
+		// Timeout occured
+		if( $stream_out === false ){
+			ciscotools_log('Timeout on telnet fread');
+			break;
+		}
 		$output .= $stream_out;
         // if the terminal is waiting to go for the next screen, just issue a space to go one
         if( strpos($output, "--More--" ) !== false ) {

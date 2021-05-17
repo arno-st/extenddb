@@ -73,18 +73,25 @@ function close_ssh($connection) {
     @ssh2_disconnect ($connection);
 }
 
-function ssh_read_stream($stream) {
+function ssh_read_stream($stream, $term='#') {
 	$output = '';
+
+	if( $stream == null ) return false;
 	
     do {
-		$stream_out = fread ($stream, 1);
-        // ciscotools_log('stream read: >'.$stream_out.'<('.strlen($stream_out).')'.' hex:'.bin2hex($stream_out));
+		$stream_out = @fread ($stream, 1);
+extdb_log('stream read: >'.$stream_out.'<('.strlen($stream_out).')'.' hex:'.bin2hex($stream_out));
+		// Timeout occured
+		if( $stream_out === false ){
+			extdb_log('Timeout on ssh fread');
+			break;
+		}
 		$output .= $stream_out;
         // if the terminal is waiting to go for the next screen, just issue a space to go one
         if( strpos($output, "--More--" ) !== false ) {
             ssh_write_stream($stream, ' ' );
         }
-     } while ( !feof($stream) && $stream_out !== false && $stream_out != '#');
+     } while ( !feof($stream) && $stream_out !== false && $stream_out != $term);
    
     if(strlen($output)!=0) {
         return $output;
@@ -95,6 +102,8 @@ function ssh_read_stream($stream) {
 }
 
 function ssh_write_stream( $stream, $cmd){
+	if( $stream == null ) return;
+
     do {
         $write = fwrite( $stream, $cmd.PHP_EOL );
 	} while( $write < strlen($cmd) );
