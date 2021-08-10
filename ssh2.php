@@ -80,7 +80,7 @@ function ssh_read_stream($stream, $term='#') {
 	
     do {
 		$stream_out = @fread ($stream, 1);
-extdb_log('stream read: >'.$stream_out.'<('.strlen($stream_out).')'.' hex:'.bin2hex($stream_out));
+//extdb_log('stream read: >'.$stream_out.'<('.strlen($stream_out).')'.' hex:'.bin2hex($stream_out));
 		// Timeout occured
 		if( $stream_out === false ){
 			extdb_log('Timeout on ssh fread');

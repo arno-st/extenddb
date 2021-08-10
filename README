@@ -40,3 +40,4 @@
 1.3.3 Move the type count from Linkdiscovery, and add serial number in the detail display
 1.3.4 Added upgrade mode to image DB
 1.3.5 Change the host.type to host.model to be more coherent with other function, so everywhere it's called model
+1.3.6 Added filter to display only some model of Switch, based on Extenddb model table	/* add new filter for device */

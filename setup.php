@@ -36,6 +36,11 @@ function plugin_extenddb_install () {
     api_plugin_register_hook('extenddb', 'device_action_execute', 'extenddb_device_action_execute', 'setup.php');
     api_plugin_register_hook('extenddb', 'device_action_prepare', 'extenddb_device_action_prepare', 'setup.php');
 
+	/* add new filter for device */
+	api_plugin_register_hook('extenddb', 'device_filters', 'extenddb_device_filters', 'setup.php');
+	api_plugin_register_hook('extenddb', 'device_sql_where', 'extenddb_device_sql_where', 'setup.php');
+	api_plugin_register_hook('extenddb', 'device_table_bottom', 'extenddb_device_table_bottom', 'setup.php');
+
 }
 
 function plugin_extenddb_uninstall () {
@@ -111,6 +116,11 @@ function extenddb_check_upgrade() {
 		if( $old < '1.3.5' ) {
 			// change the name of the switch type to model, to be more coherent between plugin
 			db_execute('ALTER TABLE host CHANGE type model CHAR(50)');
+		}
+		if( $old < '1.3.6' ) {
+			api_plugin_register_hook('extenddb', 'device_filters', 'extenddb_device_filters', 'setup.php');
+			api_plugin_register_hook('extenddb', 'device_sql_where', 'extenddb_device_sql_where', 'setup.php');
+			api_plugin_register_hook('extenddb', 'device_table_bottom', 'extenddb_device_table_bottom', 'setup.php');
 		}
 	}
 	fill_model_db(); // place where new device are added
@@ -366,7 +376,7 @@ function extenddb_utilities_action ($action) {
 
 		$total_rows = db_fetch_cell("SELECT COUNT(DISTINCT(model)) FROM host". $sql_where);
 		
-		$sql_where .= ' GROUP BY model ';
+		$sql_where .= ' GROUP BY CASE WHEN model IS NULL OR model = "" THEN "" ELSE model END ';
 
 		$extenddb_count_sql = "SELECT model,COUNT(1) as occurence FROM host 
 			$sql_where 
@@ -374,6 +384,7 @@ function extenddb_utilities_action ($action) {
 			LIMIT ' . ($rows*(get_request_var('page')-1)) . ',' . $rows;
 
 		$extenddb_count = db_fetch_assoc($extenddb_count_sql);
+extdb_log('type count query: '.$extenddb_count_sql);
 
 	/* generate page list */
 		$nav = html_nav_bar('utilities.php?action=extenddb_count&filter=' . get_request_var('filter'), MAX_DISPLAY_PAGES, get_request_var('page'), $rows, $total_rows, 11, __('Entries'), 'page', 'main');
@@ -542,10 +553,14 @@ function extenddb_utilities_action ($action) {
 		$sql_where = '';
 
 	/* filter by search string */
-		$sql_where .= ' WHERE model LIKE ' . db_qstr('' . get_request_var('model') . '');
+		if( get_request_var('model') == 'empty' || get_request_var('model') == '' ) {
+			$sql_where .= ' WHERE model IS NULL OR model = "" ';
+		} else {
+			$sql_where .= ' WHERE model LIKE ' . db_qstr('' . get_request_var('model') . '');
+		}
 
 		$total_rows = db_fetch_cell("SELECT COUNT(*) FROM host ".$sql_where);
-		
+
 		$extenddb_display_sql = "SELECT id, hostname, description, serial_no  FROM host
 			$sql_where
 			ORDER BY " . get_request_var('sort_column') . ' ' . get_request_var('sort_direction') . '
@@ -965,6 +980,97 @@ function data_export () {
 			fputcsv($stdout, $h );
 		}
 		fclose($stdout);
+}
+
+function extenddb_device_filters($filters) {
+
+	$filters['model'] = array(
+		'filter' => FILTER_DEFAULT,
+		'pageset' => true,
+		'default' => '-1'
+	);
+
+	return $filters;
+}
+
+function extenddb_device_sql_where($sql_where) {
+	$sqlquery = 'SELECT model 
+	FROM plugin_extenddb_model  
+	ORDER BY model';
+	
+	$result = db_fetch_assoc($sqlquery);
+	$models[-1] = 'Any';
+	$models[0] = 'None';
+	foreach( $result as $list ) {
+		$models[] = $list['model'];
+	}
+
+	if (get_request_var('model') == 0 ) {
+		$sql_where .= ($sql_where != '' ? ' AND ':'WHERE ') . " model = ''";
+	} else if (get_request_var('model') == -1) {
+		$sql_where .= '';
+	} else {
+		$sql_where .= ($sql_where != '' ? ' AND ':'WHERE ') . " model = '" . $models[get_request_var('model')]."'";
+	}
+
+	return $sql_where;
+}
+
+function extenddb_device_table_bottom() {
+	$sqlquery = 'SELECT model 
+	FROM plugin_extenddb_model 
+	ORDER BY model';
+	$result = db_fetch_assoc($sqlquery);
+	
+	$models[-1] = 'Any';
+	$models[0] = 'None';
+	foreach( $result as $list ) {
+		$models[] = $list['model'];
+	}
+
+	$select = '<td>' . __('Models') . '</td><td><select id="model">';
+	foreach($models as $index => $model) {
+		if ($index == get_request_var('model')) {
+			$select .= '<option selected value="' . $index . '">' . $model . '</option>';
+		} else {
+			$select .= '<option value="' . $index . '">' . $model . '</option>';
+		}
+	}
+	$select .= '</select></td>';
+	
+    ?>
+    <script type='text/javascript'>
+	$(function() {
+		$('#rows').parent().after('<?php print $select;?>');
+		<?php if (get_selected_theme() != 'classic') {?>
+		$('#model').selectmenu({
+			change: function() { 
+				applyFilter(); 
+			},
+			overflow:auto
+		});
+		<?php } else { ?>
+		$('#model').change(function() {
+			applyFilter(); 
+		});
+		<?php } ?>
+	});
+
+	applyFilter = function() {
+		strURL  = 'host.php?host_status=' + $('#host_status').val();
+		strURL += '&host_template_id=' + $('#host_template_id').val();
+		strURL += '&site_id=' + $('#site_id').val();
+		strURL += '&model=' + $('#model').val();
+		strURL += '&poller_id=' + $('#poller_id').val();
+		strURL += '&rows=' + $('#rows').val();
+		strURL += '&filter=' + $('#filter').val();
+		strURL += '&page=' + $('#page').val();
+		strURL += '&header=false';
+		loadPageNoHeader(strURL);
+	};
+
+	</script>
+	<?php
 }
 
 ?>
