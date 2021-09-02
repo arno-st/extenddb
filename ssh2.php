@@ -37,13 +37,14 @@ function create_ssh($deviceid) {
         $account['login'] = $dbquery['login'];
         $account['password'] = $dbquery['password'];
     }
- 	
+extdb_log( 'Login prompt: '. $account['login']);
+
 	// open the ssh stream to the device
  	$stream = open_ssh($dbquery['hostname'], $account['login'], $account['password']);
 	if($stream !== false){
 		$data = ssh_read_stream($stream );
 		if( $data === false ){
-			extdb_log( 'Erreur can\'t read login prompt');
+extdb_log( 'Erreur can\'t read login prompt');
 			return false;
 		}
 	}
@@ -97,7 +98,7 @@ function ssh_read_stream($stream, $term='#') {
         return $output;
     }
     
-    extdb_log('ssh_read_stream - Error - No output');
+extdb_log('ssh_read_stream - Error - No output');
     return false;
 }
 
@@ -107,5 +108,8 @@ function ssh_write_stream( $stream, $cmd){
     do {
         $write = fwrite( $stream, $cmd.PHP_EOL );
 	} while( $write < strlen($cmd) );
+
+extdb_log('ssh_write_stream: '.$cmd);
+
 }
 ?>
