@@ -403,7 +403,7 @@ extdb_log('type count query: '.$extenddb_count_sql);
 			foreach ($extenddb_count as $item) {
 				if( empty($item['model']) ) $item['model'] = 'empty';
 				form_alternate_row('line' . $item['model'], false);
-				form_selectable_cell(filter_value($item['model'], get_request_var('filter'), 'utilities.php?action=extenddb_display&sort_column=description&model=' . $item['model']), $item['model']);
+				form_selectable_cell(filter_value($item['model'], get_request_var('filter'), 'utilities.php?action=extenddb_display&sort_column=description&model=' . $item['model']), $item['model'].'&page=1');
 				form_selectable_cell(filter_value($item['occurence'], get_request_var('filter')), $item['occurence']);
 				form_end_row();
 			}
@@ -560,6 +560,7 @@ extdb_log('type count query: '.$extenddb_count_sql);
 		}
 
 		$total_rows = db_fetch_cell("SELECT COUNT(*) FROM host ".$sql_where);
+extdb_log('type count query: '.$total_rows);
 
 		$extenddb_display_sql = "SELECT id, hostname, description, serial_no  FROM host
 			$sql_where
@@ -567,6 +568,7 @@ extdb_log('type count query: '.$extenddb_count_sql);
 			LIMIT ' . ($rows*(get_request_var('page')-1)) . ',' . $rows;
 
 		$extenddb_display = db_fetch_assoc($extenddb_display_sql);
+extdb_log('type display query: '.$extenddb_display_sql);
 //SELECT id, hostname, description, serial_no FROM host WHERE model LIKE 'C9200L-24P-4X' ORDER BY description ASC LIMIT 50,50
 
 	/* generate page list */
@@ -618,30 +620,30 @@ function extenddb_api_device_new($hostrecord_array) {
 $snmpsysobjid = ".1.3.6.1.2.1.1.2.0"; // ObjectID
 $snmpsysdescr = ".1.3.6.1.2.1.1.1.0"; // system description
 
-extdb_log('Enter Extenddb:'.$hostrecord_array['description'] );
+extdb_log('extenddb_api_device_new:'.$hostrecord_array['description'] );
 
 // check valid call
 	if( !array_key_exists('disabled', $hostrecord_array ) ) {
-		extdb_log('Not valid call: '. print_r($hostrecord_array, true) );
+		extdb_log('extenddb_api_device_new Not valid call: '. print_r($hostrecord_array, true) );
 		return $hostrecord_array;
 	}
 
 	// get valid host from DB
 	$host = db_fetch_row("SELECT * FROM host WHERE hostname='".$hostrecord_array['hostname']."' OR description='".$hostrecord_array['description']."'");
 	if( empty($host) ){
-		extdb_log('Unknown hostname in Extenddb:'. print_r($hostrecord_array, true) );
+		extdb_log('extenddb_api_device_new Unknown hostname in Extenddb:'. print_r($hostrecord_array, true) );
 		return $hostrecord_array;
 	}
 	
 	// don't do it for disabled and no snmp
 	if ($host['isPhone'] == 'On' ) {
-extdb_log('Exit Extenddb skip for phone');
+extdb_log('extenddb_api_device_new Exit Extenddb skip for phone');
 		return $hostrecord_array;
 	}
 
 	// don't do it for disabled and no snmp
 	if ($host['disabled'] == 'on' || $host['snmp_version'] == 0 ) {
-extdb_log('Exit Extenddb Disabled or no snmp');
+extdb_log('extenddb_api_device_new Exit Extenddb Disabled or no snmp');
 		return $hostrecord_array;
 	}
 	
@@ -655,6 +657,7 @@ extdb_log('Exit Extenddb Disabled or no snmp');
 		
 		$regex = '~.[0-9].*\.([0-9].*)~';
 		preg_match( $regex, $host_data, $result ); // extract the OID of the switch number from the snmp query
+extdb_log('extenddb_api_device_new host_data: '. print_r($host_data, true));
 		$host['snmp_sysObjectID'] = 'iso.3.6.1.4.1.9.1.'.$result[1];
 		$hostrecord_array['snmp_sysObjectID'] = $host['snmp_sysObjectID'];
 		extdb_log('host_data: '.$host['snmp_sysObjectID']);
@@ -669,7 +672,7 @@ extdb_log('Exit Extenddb Disabled or no snmp');
 	
 	// do it for Cisco model
 	if( mb_stripos( $host['snmp_sysDescr'], 'cisco') === false ) {
-extdb_log('Exit Extenddb not cisco' );
+extdb_log('extenddb_api_device_new Exit Extenddb not cisco' );
 		return $hostrecord_array;
 	}
 
@@ -680,7 +683,7 @@ extdb_log('Exit Extenddb not cisco' );
 
 	sql_save($host, 'host');
 
-extdb_log('End Extenddb: '.$host['model'].'-'.$host['serial_no'] );
+extdb_log('extenddb_api_device_new End Extenddb: '.$host['model'].'-'.$host['serial_no'] );
 	return $hostrecord_array;
 }
 
@@ -930,6 +933,7 @@ function fill_model_db(){
 	."('iso.3.6.1.4.1.9.1.2694','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C9200L-24P-4X'),"
 	."('iso.3.6.1.4.1.9.1.2694','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C9200L-24P-4G'),"
 	."('iso.3.6.1.4.1.9.1.2694','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C9200L-24P-4G-E'),"
+	."('iso.3.6.1.4.1.9.1.2711','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C921-4PLTEGB'),"
 	."('iso.3.6.1.4.1.9.1.279','.1.3.6.1.2.1.47.1.1.1.1.2.2','.1.3.6.1.2.1.47.1.1.1.1.11.1','VG200'),"
 	."('iso.3.6.1.4.1.9.1.324','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','WS-C2950-24'),"
 	."('iso.3.6.1.4.1.9.1.516','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C3750G-12S'),"

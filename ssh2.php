@@ -74,7 +74,7 @@ function close_ssh($connection) {
     @ssh2_disconnect ($connection);
 }
 
-function ssh_read_stream($stream, $term='#') {
+function ssh_read_stream($stream, $term='#' ) {
 	$output = '';
 
 	if( $stream == null ) return false;
@@ -91,8 +91,11 @@ function ssh_read_stream($stream, $term='#') {
         // if the terminal is waiting to go for the next screen, just issue a space to go one
         if( strpos($output, "--More--" ) !== false ) {
             ssh_write_stream($stream, ' ' );
+			// then remove it from stream
+			$output = str_replace( "--More--", "", $output );
         }
-     } while ( !feof($stream) && $stream_out !== false && $stream_out != $term);
+		
+	} while ( !feof($stream) && $stream_out !== false && $stream_out != $term);
    
     if(strlen($output)!=0) {
         return $output;
@@ -109,7 +112,7 @@ function ssh_write_stream( $stream, $cmd){
         $write = fwrite( $stream, $cmd.PHP_EOL );
 	} while( $write < strlen($cmd) );
 
-extdb_log('ssh_write_stream: '.$cmd);
+extdb_log('ssh_write_stream: '.$cmd .' ('.strlen($cmd).')');
 
 }
 ?>
