@@ -676,6 +676,12 @@ extdb_log('extenddb_api_device_new Exit Extenddb not cisco' );
 		return $hostrecord_array;
 	}
 
+	if (isset_request_var('isPhone')) {
+		$hostrecord_array['isPhone'] = form_input_validate(get_nfilter_request_var('isPhone'), 'isPhone', '', true, 3);
+	} else {
+		$hostrecord_array['isPhone'] = form_input_validate('off', 'isPhone', '', true, 3);
+	}
+
 	$host_extend_record['serial_no'] = get_SN( $host, $host['snmp_sysObjectID'] );
 	$host['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
 
