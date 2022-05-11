@@ -221,6 +221,7 @@ function extenddb_utilities_action ($action) {
 			WHERE (serial_no is NULL OR model IS NULL OR serial_no = '' OR model = '')
 			AND status = '3' AND disabled != 'on'
 			AND snmp_sysDescr LIKE '%cisco%'
+			AND snmp_version>0
 			ORDER BY id");
 		// Upgrade the extenddb value
 			if( $dbquery > 0 ) {
@@ -233,6 +234,7 @@ function extenddb_utilities_action ($action) {
 			$dbquery = db_fetch_assoc("SELECT  * FROM host 
 			WHERE status = '3' AND disabled != 'on'
 			AND snmp_sysDescr LIKE '%cisco%'
+			AND snmp_version>0
 			ORDER BY id");
 		// Upgrade the extenddb value
 			if( $dbquery > 0 ) {
@@ -246,7 +248,7 @@ function extenddb_utilities_action ($action) {
 		bottom_footer();
 	} else if ($action == 'extenddb_export_model_SN') {
 		data_export();
-	} elseif ($action == 'extenddb_count') {
+	} elseif ($action == 'extenddb_count') { //**************Display the list of model and number of each one of it
 		top_header();
 
 	/* ================= input validation and session storage ================= */
@@ -367,25 +369,60 @@ function extenddb_utilities_action ($action) {
 		html_end_box();
 
 	// sql query: SELECT model,COUNT(1) as occurence FROM host where model LIKE "C9200" GROUP BY model ORDER BY occurence
-		$sql_where = '';
+		$sql_where = " WHERE disabled != 'on'  AND snmp_version>0 ";
 
 	/* filter by search string */
 		if (get_request_var('filter') != '') {
-			$sql_where .= ' WHERE model LIKE ' . db_qstr('%' . get_request_var('filter') . '%');
+			$sql_where .= ' AND model LIKE ' . db_qstr('%' . get_request_var('filter') . '%');
 		}
 
-		$total_rows = db_fetch_cell("SELECT COUNT(DISTINCT(model)) FROM host". $sql_where);
+		$sql_where .= ' ORDER BY CASE WHEN model IS NULL OR model = "" THEN "" ELSE model END ';
 		
-		$sql_where .= ' GROUP BY CASE WHEN model IS NULL OR model = "" THEN "" ELSE model END ';
+		// retrieve all model, explode dual value, count uniquness
+		$total_models = db_fetch_assoc("SELECT model FROM host". $sql_where);
+extdb_log('model_count SQL query: ' ."SELECT model FROM host". $sql_where );
 
-		$extenddb_count_sql = "SELECT model,COUNT(1) as occurence FROM host 
-			$sql_where 
-			ORDER BY " . get_request_var('sort_column') . ' ' . get_request_var('sort_direction') . '
-			LIMIT ' . ($rows*(get_request_var('page')-1)) . ',' . $rows;
+		// explode the stack on 2 devices to count them
+		$total_model = array();
+		foreach( $total_models as $model ) {
+			$explode_model = explode('|', $model['model']);
+			if( count($explode_model) > 1) {
+			 $total_model[] = $explode_model[1];
+			} 
+			$total_model[] = $explode_model[0];
+		}
+		// then uniquness of all record, then give real number of type we have
+		$total_rows = count( array_unique($total_model));
 
-		$extenddb_count = db_fetch_assoc($extenddb_count_sql);
-extdb_log('type count query: '.$extenddb_count_sql);
+		// count each of it
+		$total_model_count = array_count_values($total_model); // count each model type, return
+		foreach($total_model_count as $model_count => $count ) {
+extdb_log('model_count :' .$model_count .' count: '.$count );
 
+			$extenddb_count[] = array('model' => $model_count, 'occurence' => $count);
+		}
+// sort it
+extdb_log('model_count order before:' .print_r($extenddb_count, true) );
+		$model = array_column( $extenddb_count, 'model' );
+		$occurence = array_column( $extenddb_count, 'occurence' );
+
+		if( get_request_var('sort_column') == 'occurence') {
+			if( get_request_var('sort_direction') == 'ASC' )
+				array_multisort( $occurence, SORT_ASC, $extenddb_count );
+			else 
+				array_multisort( $occurence, SORT_DESC, $extenddb_count );
+		} else {
+			if( get_request_var('sort_direction') == 'ASC' )
+				array_multisort( $model, SORT_ASC, $extenddb_count );
+			else 
+				array_multisort( $model, SORT_DESC, $extenddb_count );
+		}
+extdb_log('model_count order after: ' .print_r($extenddb_count, true) );
+
+// define the limit, based on the size of the display
+		$extenddb_count = array_slice($extenddb_count, $rows*(get_request_var('page')-1), $rows,  $preserve_keys = true);
+extdb_log('model_count LIMIT : ' .print_r($extenddb_count, true) );
+		
 	/* generate page list */
 		$nav = html_nav_bar('utilities.php?action=extenddb_count&filter=' . get_request_var('filter'), MAX_DISPLAY_PAGES, get_request_var('page'), $rows, $total_rows, 11, __('Entries'), 'page', 'main');
 
@@ -550,17 +587,17 @@ extdb_log('type count query: '.$extenddb_count_sql);
 		<?php
 		html_end_box();
 
-		$sql_where = '';
+		$sql_where = " WHERE disabled != 'on' AND snmp_version>0 ";
 
 	/* filter by search string */
 		if( get_request_var('model') == 'empty' || get_request_var('model') == '' ) {
-			$sql_where .= ' WHERE model IS NULL OR model = "" ';
+			$sql_where .= ' AND (model IS NULL OR model = "") ';
 		} else {
-			$sql_where .= ' WHERE model LIKE ' . db_qstr('' . get_request_var('model') . '');
+			$sql_where .= ' AND model LIKE ' . db_qstr('%' . get_request_var('model') . '%');
 		}
-
-		$total_rows = db_fetch_cell("SELECT COUNT(*) FROM host ".$sql_where);
-extdb_log('type count query: '.$total_rows);
+		$extenddb_display_sqlquery = "SELECT COUNT(*) FROM host ".$sql_where;
+		$total_rows = db_fetch_cell($extenddb_display_sqlquery);
+extdb_log('type count query: '.$extenddb_display_sqlquery);
 
 		$extenddb_display_sql = "SELECT id, hostname, description, serial_no  FROM host
 			$sql_where
@@ -620,7 +657,7 @@ function extenddb_api_device_new($hostrecord_array) {
 $snmpsysobjid = ".1.3.6.1.2.1.1.2.0"; // ObjectID
 $snmpsysdescr = ".1.3.6.1.2.1.1.1.0"; // system description
 
-extdb_log('extenddb_api_device_new:'.$hostrecord_array['description'] );
+extdb_log('extenddb_api_device_new: '.$hostrecord_array['description'] );
 
 // check valid call
 	if( !array_key_exists('disabled', $hostrecord_array ) ) {
@@ -727,6 +764,9 @@ function extenddb_check_dependencies() {
 }
 
 function get_model( $hostrecord_array ) {
+	$snmp_stackinfo = ".1.3.6.1.4.1.9.9.500.1.2.1.1.1"; // will return an array of switch number, the id last number of the OID
+	$snmp_vssinfo = ".1.3.6.1.4.1.9.9.388.1.2.2.1.1"; // will return an array of switch number in a vss
+
 //snmp_SysObjectId, oid_model, oid_sn, model
 	$sqlquery = "SELECT * FROM plugin_extenddb_model WHERE snmp_SysObjectId='".$hostrecord_array['snmp_sysObjectID']."'";
 
@@ -737,11 +777,89 @@ function get_model( $hostrecord_array ) {
 	} else {
 		$oid_model =  $result['oid_model'];
 	}
+extdb_log('get_model oid_model: '.$oid_model );
+
+	// check if we have a stack, and how many device
+	$stacknumber = cacti_snmp_walk( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $snmp_stackinfo, 
+	$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
+	$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
+	$hostrecord_array['snmp_context'] ); // count() if 0 mean no stack possibility, or can't read (4500x)
+
+	extdb_log('get_model stacknumber: '.print_r($stacknumber, true) );
+
+	$data_model = '';
+	if( count($stacknumber) == 0) { // VSS ? or no answer to CISCO-STACKWISE-MIB
+		// check if we have a vss
+		$vssnumber = cacti_snmp_walk( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $snmp_vssinfo, 
+		$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
+		$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
+		$hostrecord_array['snmp_context'] ); // count() if 0 mean no stack possibility, or can't read (4500x)
+extdb_log('get_model vssnumber: '.print_r($vssnumber, true) );
+	
+		if( count($vssnumber) == 0) { // no vss either
+			$data_model = cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $oid_model, 
+			$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
+			$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
+			$hostrecord_array['snmp_context'] );
+
+extdb_log('get_model data_model1: '.$data_model );
+
+			if( empty($data_model) ) {
+				extdb_log("Can t find serial No for : " . $hostrecord_array['description'] .'(oid:'.$hostrecord_array['snmp_sysObjectID'].') at: '. $oid_model );
+			}
+		} else {
+			// if VSS of 4500-X the device number are 1000 or 11000, can't find relationship with vssnumber
+			foreach( $vssnumber as $stackitem ) {
+				
+				$regex = '~(.[0-9.]+)\.([0-9]+)~';
+				preg_match( $regex, $oid_model, $result ); // extract base of the OID from the DB (left part)
+				$stacksnmpswnum = $result[1];
+		/*
+				$regex = '~.[0-9].*\.([0-9].*)~';
+				preg_match( $regex, $stackitem['oid'], $result ); // extract the OID of the switch number from the snmp query
+				$stacksnmpno = $stacksnmpswnum.'.'.$result[2];
+	*/
+			if( $stackitem == 1 ) $stacksnmpno = $stacksnmpswnum.'.1000';
+			else $stacksnmpno = $stacksnmpswnum.'.11000';
+			
+				$data_model .= '|' . cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $stacksnmpno, 
+				$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
+				$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
+				$hostrecord_array['snmp_context'] );
+			}			
+			$data_model = trim($data_model);
+			$data_model = trim($data_model, '|');
+
+extdb_log('get_model data_model2: '.$data_model );
+
+		}
+	} else {
+		foreach( $stacknumber as $stackitem ) {
+			$regex = '~(.[0-9.]+)\.([0-9]+)~';
+			preg_match( $regex, $oid_model, $result ); // extract base of the OID from the DB (left part)
+			$stacksnmpswnum = $result[1];
+	
+			$regex = '~.[0-9].*\.([0-9].*)~';
+			preg_match( $regex, $stackitem['oid'], $result ); // extract the OID of the switch number from the snmp query
+			$stacksnmpno = $stacksnmpswnum.'.'.$result[1];
+
+			$data_model .= '|' . cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $stacksnmpno, 
+			$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
+			$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
+			$hostrecord_array['snmp_context'] );
+		}
+		$data_model = trim($data_model);
+		$data_model = trim($data_model, '|');
+
+extdb_log('get_model data_model3: '.$data_model );
+	}
+
+/*
 	$data_model = cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $oid_model, 
 	$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
 	$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
 	$hostrecord_array['snmp_context'] );
-
+*/
 	if( empty($data_model) ) {
 		extdb_log( "Can t find model No for : " . $hostrecord_array['description'].'(oid:'.$hostrecord_array['snmp_sysObjectID'].') at: '. $oid_model);
 	}
@@ -796,12 +914,13 @@ function get_SN( $hostrecord_array, $SysObjId ){
 				preg_match( $regex, $stackitem['oid'], $result ); // extract the OID of the switch number from the snmp query
 				$stacksnmpno = $stacksnmpswnum.'.'.$result[1];
 	
-				$serialno .= ' ' . cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $stacksnmpno, 
+				$serialno .= '|' . cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $stacksnmpno, 
 				$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
 				$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
 				$hostrecord_array['snmp_context'] );
 			}			
 			$serialno = trim($serialno);
+			$serialno = trim($serialno, '|');
 		}
 	} else {
 		foreach( $stacknumber as $stackitem ) {
@@ -813,12 +932,13 @@ function get_SN( $hostrecord_array, $SysObjId ){
 			preg_match( $regex, $stackitem['oid'], $result ); // extract the OID of the switch number from the snmp query
 			$stacksnmpno = $stacksnmpswnum.'.'.$result[1];
 
-			$serialno .= ' ' . cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $stacksnmpno, 
+			$serialno .= '|' . cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $stacksnmpno, 
 			$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
 			$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
 			$hostrecord_array['snmp_context'] );
 		}
 		$serialno = trim($serialno);
+		$serialno = trim($serialno, '|');
 	}
 	return $serialno;
 }
@@ -976,6 +1096,7 @@ function data_export () {
 		$dbquery = db_fetch_assoc("SELECT description, hostname, model, serial_no FROM host 
 		WHERE status = '3' AND disabled != 'on'
 		AND snmp_sysDescr LIKE '%cisco%'
+		AND snmp_version>0
 		ORDER BY id");
 		
 		$stdout = fopen('php://output', 'w');
