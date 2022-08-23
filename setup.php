@@ -24,7 +24,9 @@
 include_once($config['base_path'] . '/plugins/extenddb/ssh2.php');
 include_once($config['base_path'] . '/plugins/extenddb/telnet.php');
 
-function plugin_extenddb_install () {
+function plugin_extenddb_install() {
+	global $config;
+
 	api_plugin_register_hook('extenddb', 'config_settings', 'extenddb_config_settings', 'setup.php');
 	api_plugin_register_hook('extenddb', 'config_form', 'extenddb_config_form', 'setup.php');
 	api_plugin_register_hook('extenddb', 'api_device_new', 'extenddb_api_device_new', 'setup.php');
@@ -35,6 +37,7 @@ function plugin_extenddb_install () {
     api_plugin_register_hook('extenddb', 'device_action_array', 'extenddb_device_action_array', 'setup.php');
     api_plugin_register_hook('extenddb', 'device_action_execute', 'extenddb_device_action_execute', 'setup.php');
     api_plugin_register_hook('extenddb', 'device_action_prepare', 'extenddb_device_action_prepare', 'setup.php');
+	api_plugin_register_hook('extenddb', 'device_remove', 'extenddb_api_device_remove', 'setup.php');
 
 	/* add new filter for device */
 	api_plugin_register_hook('extenddb', 'device_filters', 'extenddb_device_filters', 'setup.php');
@@ -47,7 +50,9 @@ function plugin_extenddb_uninstall () {
 	// Do any extra Uninstall stuff here
 
 	// Remove items from the settings table
-	db_execute('ALTER TABLE host DROP COLUMN serial_no, DROP COLUMN model, DROP COLUMN isPhone');
+	db_execute('ALTER TABLE host DROP COLUMN isPhone');
+	db_execute('DROP TABLE plugin_extenddb_host_model');
+	db_execute('DROP TABLE plugin_extenddb_host_serial_no');
 }
 
 function plugin_extenddb_check_config () {
@@ -73,7 +78,6 @@ function extenddb_check_upgrade() {
 		WHERE directory="extenddb"');
 
 	if ($current != $old) {
-
 		// Set the new version
 		db_execute("UPDATE plugin_config SET version='$current' WHERE directory='extenddb'");
 		db_execute("UPDATE plugin_config SET 
@@ -122,8 +126,52 @@ function extenddb_check_upgrade() {
 			api_plugin_register_hook('extenddb', 'device_sql_where', 'extenddb_device_sql_where', 'setup.php');
 			api_plugin_register_hook('extenddb', 'device_table_bottom', 'extenddb_device_table_bottom', 'setup.php');
 		}
+		if( $old < '1.4.0' ) {
+			$data = array();
+			$data['columns'][] = array('name' => 'id', 'type' => 'mediumint(8)', 'auto_increment'=>'');
+			$data['columns'][] = array('name' => 'host_id', 'type' => 'mediumint(8)', 'NULL' => false );
+			$data['columns'][] = array('name' => 'serial_no', 'type' => 'char(50)', 'NULL' => true );
+ 			$data['primary'] = "id`,`host_id";
+			$data['keys'][] = array('name' => 'host_id', 'columns' => 'host_id');
+			$data['keys'][] = array('name' => 'serial_no', 'columns' => 'serial_no');
+			$data['type'] = 'InnoDB';
+			api_plugin_db_table_create('extenddb', 'plugin_extenddb_host_serial_no', $data);
+
+			$data = array();
+			$data['columns'][] = array('name' => 'id', 'type' => 'mediumint(8)', 'auto_increment'=>'');
+			$data['columns'][] = array('name' => 'host_id', 'type' => 'mediumint(8)', 'NULL' => false );
+			$data['columns'][] = array('name' => 'model', 'type' => 'char(50)', 'NULL' => true );
+ 			$data['primary'] = "id`,`host_id";
+			$data['keys'][] = array('name' => 'host_id', 'columns' => 'host_id');
+			$data['keys'][] = array('name' => 'model', 'columns' => 'model');
+			$data['type'] = 'InnoDB';
+			api_plugin_db_table_create('extenddb', 'plugin_extenddb_host_model', $data);
+			
+			// upgrade from previous 1.4.0, so transfert data to new table
+			$sql_query = "SELECT id, model, serial_no FROM host WHERE ((serial_no != '' AND serial_no IS NOT NULL) OR (model IS NOT NULL AND model != '')) AND snmp_version > 0";
+			$dbquery = db_fetch_assoc( $sql_query );
+			// be sure than the query return something
+			if( count($dbquery) > 0 ) {
+				foreach( $dbquery as $hostid ){
+					$explode_model = explode('|', $hostid['model']);
+					foreach( $explode_model as $key => $model ) {
+						db_execute_prepared('INSERT INTO plugin_extenddb_host_model (id, host_id, model) VALUES (?, ?, ?)', array($key,$hostid['id'], $model) );
+					}
+		
+					$explode_serial = explode('|', $hostid['serial_no']);
+					foreach( $explode_serial as $key => $serial ) {
+						db_execute_prepared('INSERT INTO plugin_extenddb_host_serial_no (id, host_id, serial_no) VALUES (?, ?, ?)', array($key, $hostid['id'], $serial) );
+					}
+				}
+				db_remove_column('host', 'model');
+				db_remove_column('host', 'serial_no');
+			}
+			api_plugin_register_hook('extenddb', 'device_remove', 'extenddb_api_device_remove', 'setup.php');
+		}
+	} else {
+		extenddb_setup_table(); // setup the table if new install
+		fill_model_db(); // place where new device are added
 	}
-	fill_model_db(); // place where new device are added
 }
 
 function plugin_extenddb_version () {
@@ -132,27 +180,85 @@ function plugin_extenddb_version () {
 	return $info['info'];
 }
 
+function extenddb_setup_table() {
+	global $config;
+	include_once($config["library_path"] . "/database.php");
+
+	$data = array();
+	$data['columns'][] = array('name' => 'id', 'type' => 'mediumint(8)', 'NULL' => false);
+	$data['columns'][] = array('name' => 'host_id', 'type' => 'mediumint(8)', 'NULL' => false );
+	$data['columns'][] = array('name' => 'serial_no', 'type' => 'char(50)', 'NULL' => true );
+ 	$data['primary'] = "id`,`host_id";
+	$data['keys'][] = array('name' => 'host_id', 'columns' => 'host_id');
+	$data['keys'][] = array('name' => 'serial_no', 'columns' => 'serial_no');
+	$data['type'] = 'InnoDB';
+	api_plugin_db_table_create('extenddb', 'plugin_extenddb_host_serial_no', $data);
+
+	$data = array();
+	$data['columns'][] = array('name' => 'id', 'type' => 'mediumint(8)', 'NULL' => false);
+	$data['columns'][] = array('name' => 'host_id', 'type' => 'mediumint(8)', 'NULL' => false );
+	$data['columns'][] = array('name' => 'model', 'type' => 'char(50)', 'NULL' => true );
+ 	$data['primary'] = "id`,`host_id";
+	$data['keys'][] = array('name' => 'host_id', 'columns' => 'host_id');
+	$data['keys'][] = array('name' => 'model', 'columns' => 'model');
+	$data['type'] = 'InnoDB';
+	api_plugin_db_table_create('extenddb', 'plugin_extenddb_host_model', $data);
+
+	$data = array();
+	$data['columns'][] = array('name' => 'id', 'type' => 'mediumint(8)', 'auto_increment'=>'');
+	$data['columns'][] = array('name' => 'snmp_SysObjectId', 'type' => 'varchar(64)', 'NULL' => false );
+	$data['columns'][] = array('name' => 'oid_model', 'type' => 'varchar(64)', 'NULL' => false );
+	$data['columns'][] = array('name' => 'oid_sn', 'type' => 'varchar(64)', 'NULL' => false );
+	$data['columns'][] = array('name' => 'model', 'type' => 'varchar(64)', 'NULL' => false );
+ 	$data['primary'] = 'id';
+	$data['keys'][] = array('name' => 'snmp_SysObjectId', 'columns' => 'snmp_SysObjectId');
+	$data['keys'][] = array('name' => 'oid_model', 'columns' => 'oid_model');
+	$data['keys'][] = array('name' => 'model', 'columns' => 'model');
+	$data['type'] = 'InnoDB';
+	api_plugin_db_table_create('extenddb', 'plugin_extenddb_model', $data);
+}
+
+function extenddb_api_device_remove( $host_id ){
+	global $asset_status;
+extdb_log('extenddb_api_device_remove Start: '.print_r($host_id, true) );
+
+	foreach( $host_id as $host ) {
+extdb_log('extenddb_api_device_remove remove from serial_no table: '.print_r($host, true) );
+		db_execute_prepared('DELETE FROM plugin_extenddb_host_serial_no where host_id=?', array($host) );
+extdb_log('extenddb_api_device_remove remove from model table: '.print_r($host_id, true) );
+		db_execute_prepared('DELETE FROM plugin_extenddb_host_model where host_id=?', array($host) );
+	}
+	return $host_id;
+}
+
 function extenddb_config_form () {
 	global $fields_host_edit;
 	$fields_host_edit2 = $fields_host_edit;
 	$fields_host_edit3 = array();
 	foreach ($fields_host_edit2 as $f => $a) {
 		$fields_host_edit3[$f] = $a;
-		if ($f == 'notes') {
+		if ($f == 'external_id') {
+			$fields_host_edit3['extenddb_header'] = array(
+				'friendly_name' => __('Extend DB'),
+				'method' => 'spacer',
+				'collapsible' => 'true'
+			);
 			$fields_host_edit3['serial_no'] = array(
-				'method' => 'textbox',
+				'method' => 'drop_sql',
 				'friendly_name' => 'Serial No',
 				'description' => 'Enter the serial number.',
 				'max_length' => 50,
 				'value' => '|arg1:serial_no|',
+				'sql' => 'SELECT id, serial_no AS name FROM plugin_extenddb_host_serial_no WHERE host_id="|arg1:id|"',
 				'default' => '',
 			);
 			$fields_host_edit3['model'] = array(
 				'friendly_name' => 'Model',
 				'description' => 'This is the model of equipement.',
-				'method' => 'textbox',
+				'method' => 'drop_sql',
 				'max_length' => 50,
 				'value' => '|arg1:model|',
+				'sql' => 'SELECT id, model AS name FROM plugin_extenddb_host_model WHERE host_id="|arg1:id|"',
 				'default' => '',
 			);
 			$fields_host_edit3['isPhone'] = array(
@@ -218,11 +324,13 @@ function extenddb_utilities_action ($action) {
 		if ($action == 'extenddb_complete') {
 	// get device list,  where serial number is empty, or model
 			$dbquery = db_fetch_assoc("SELECT * FROM host 
-			WHERE (serial_no is NULL OR model IS NULL OR serial_no = '' OR model = '')
-			AND status = '3' AND disabled != 'on'
-			AND snmp_sysDescr LIKE '%cisco%'
-			AND snmp_version>0
-			ORDER BY id");
+			LEFT JOIN plugin_extenddb_host_serial_no AS pehs ON pehs.host_id=host.id
+			LEFT JOIN plugin_extenddb_host_model AS pehm ON pehm.host_id=host.id
+			WHERE (pehs.host_id IS NULL OR pehm.host_id IS NULL)
+            AND host.status = '3' AND host.disabled != 'on'
+			AND host.snmp_sysDescr LIKE '%cisco%'
+			AND host.snmp_version>0
+			ORDER BY host.id");
 		// Upgrade the extenddb value
 			if( $dbquery > 0 ) {
 				foreach ($dbquery as $host) {
@@ -230,7 +338,7 @@ function extenddb_utilities_action ($action) {
 				}
 			}
 		} else if ($action == 'extenddb_rebuild') {
-	// get device list,  where serial number is empty, or model
+	// get device list
 			$dbquery = db_fetch_assoc("SELECT  * FROM host 
 			WHERE status = '3' AND disabled != 'on'
 			AND snmp_sysDescr LIKE '%cisco%'
@@ -368,39 +476,24 @@ function extenddb_utilities_action ($action) {
 		<?php
 		html_end_box();
 
-	// sql query: SELECT model,COUNT(1) as occurence FROM host where model LIKE "C9200" GROUP BY model ORDER BY occurence
-		$sql_where = " WHERE disabled != 'on'  AND snmp_version>0 ";
+		$sql_where = " WHERE true ";
 
 	/* filter by search string */
 		if (get_request_var('filter') != '') {
-			$sql_where .= ' AND model LIKE ' . db_qstr('%' . get_request_var('filter') . '%');
+			$sql_where .= ' AND pehm.model LIKE ' . db_qstr('%' . get_request_var('filter') . '%');
 		}
 
-		$sql_where .= ' ORDER BY CASE WHEN model IS NULL OR model = "" THEN "" ELSE model END ';
-		
-		// retrieve all model, explode dual value, count uniquness
-		$total_models = db_fetch_assoc("SELECT model FROM host". $sql_where);
-extdb_log('model_count SQL query: ' ."SELECT model FROM host". $sql_where );
+		// retrieve all model count uniquness
+		$total_rows = db_fetch_cell("SELECT count(distinct(pehm.model)) FROM plugin_extenddb_host_model AS pehm". $sql_where);
 
-		// explode the stack on 2 devices to count them
-		$total_model = array();
-		foreach( $total_models as $model ) {
-			$explode_model = explode('|', $model['model']);
-			if( count($explode_model) > 1) {
-			 $total_model[] = $explode_model[1];
-			} 
-			$total_model[] = $explode_model[0];
-		}
-		// then uniquness of all record, then give real number of type we have
-		$total_rows = count( array_unique($total_model));
+extdb_log('total_rows :' .print_r($total_rows, true) );
 
 		// count each of it
-		$total_model_count = array_count_values($total_model); // count each model type, return
-		foreach($total_model_count as $model_count => $count ) {
-extdb_log('model_count :' .$model_count .' count: '.$count );
+		$extenddb_count = db_fetch_assoc("SELECT count(pehm.model) AS occurence, pehm.model AS model FROM plugin_extenddb_host_model AS pehm ". $sql_where
+		." GROUP BY model");
 
-			$extenddb_count[] = array('model' => $model_count, 'occurence' => $count);
-		}
+extdb_log('extenddb_count :' .print_r($extenddb_count, true) );
+
 // sort it
 extdb_log('model_count order before:' .print_r($extenddb_count, true) );
 		$model = array_column( $extenddb_count, 'model' );
@@ -421,7 +514,6 @@ extdb_log('model_count order after: ' .print_r($extenddb_count, true) );
 
 // define the limit, based on the size of the display
 		$extenddb_count = array_slice($extenddb_count, $rows*(get_request_var('page')-1), $rows,  $preserve_keys = true);
-extdb_log('model_count LIMIT : ' .print_r($extenddb_count, true) );
 		
 	/* generate page list */
 		$nav = html_nav_bar('utilities.php?action=extenddb_count&filter=' . get_request_var('filter'), MAX_DISPLAY_PAGES, get_request_var('page'), $rows, $total_rows, 11, __('Entries'), 'page', 'main');
@@ -587,19 +679,27 @@ extdb_log('model_count LIMIT : ' .print_r($extenddb_count, true) );
 		<?php
 		html_end_box();
 
-		$sql_where = " WHERE disabled != 'on' AND snmp_version>0 ";
-
+		$sql_where = "";
+			
 	/* filter by search string */
 		if( get_request_var('model') == 'empty' || get_request_var('model') == '' ) {
-			$sql_where .= ' AND (model IS NULL OR model = "") ';
+			$sql_where .= ' LEFT JOIN plugin_extenddb_host_model AS pehm ON pehm.host_id=host.id
+			WHERE ( pehm.host_id IS NULL) ';
 		} else {
-			$sql_where .= ' AND model LIKE ' . db_qstr('%' . get_request_var('model') . '%');
+			$sql_where .= " INNER JOIN plugin_extenddb_host_model as pehm ON pehm.host_id=host.id 
+			INNER JOIN plugin_extenddb_host_serial_no as pehs ON pehs.host_id=host.id 
+			WHERE pehm.model LIKE ". db_qstr('%' . get_request_var('model') . '%');
 		}
-		$extenddb_display_sqlquery = "SELECT COUNT(*) FROM host ".$sql_where;
+		$sql_where .= " AND host.disabled != 'on' ";
+		
+		$extenddb_display_sqlquery = "SELECT COUNT(DISTINCT(pehs.serial_no)) FROM host ".$sql_where;
 		$total_rows = db_fetch_cell($extenddb_display_sqlquery);
 extdb_log('type count query: '.$extenddb_display_sqlquery);
 
-		$extenddb_display_sql = "SELECT id, hostname, description, serial_no  FROM host
+		// group by serial number to have only one entry of each
+		$sql_where .= " GROUP BY pehs.serial_no ";
+
+		$extenddb_display_sql = "SELECT host.id as id, host.hostname as hostname, host.description as description, pehs.serial_no as serial_no FROM host
 			$sql_where
 			ORDER BY " . get_request_var('sort_column') . ' ' . get_request_var('sort_direction') . '
 			LIMIT ' . ($rows*(get_request_var('page')-1)) . ',' . $rows;
@@ -661,20 +761,20 @@ extdb_log('extenddb_api_device_new: '.$hostrecord_array['description'] );
 
 // check valid call
 	if( !array_key_exists('disabled', $hostrecord_array ) ) {
-		extdb_log('extenddb_api_device_new Not valid call: '. print_r($hostrecord_array, true) );
+			extdb_log('extenddb_api_device_new Not valid call: '. print_r($hostrecord_array, true) );
 		return $hostrecord_array;
 	}
 
 	// get valid host from DB
 	$host = db_fetch_row("SELECT * FROM host WHERE hostname='".$hostrecord_array['hostname']."' OR description='".$hostrecord_array['description']."'");
 	if( empty($host) ){
-		extdb_log('extenddb_api_device_new Unknown hostname in Extenddb:'. print_r($hostrecord_array, true) );
+			extdb_log('extenddb_api_device_new Unknown hostname in Extenddb:'. print_r($hostrecord_array, true) );
 		return $hostrecord_array;
 	}
 	
 	// don't do it for disabled and no snmp
 	if ($host['isPhone'] == 'On' ) {
-extdb_log('extenddb_api_device_new Exit Extenddb skip for phone');
+			extdb_log('extenddb_api_device_new Exit Extenddb skip for phone');
 		return $hostrecord_array;
 	}
 
@@ -697,14 +797,14 @@ extdb_log('extenddb_api_device_new Exit Extenddb Disabled or no snmp');
 extdb_log('extenddb_api_device_new host_data: '. print_r($host_data, true));
 		$host['snmp_sysObjectID'] = 'iso.3.6.1.4.1.9.1.'.$result[1];
 		$hostrecord_array['snmp_sysObjectID'] = $host['snmp_sysObjectID'];
-		extdb_log('host_data: '.$host['snmp_sysObjectID']);
+extdb_log('host_data: '.$host['snmp_sysObjectID']);
 	
 		$host['snmp_sysDescr'] = cacti_snmp_get( $host['hostname'], $host['snmp_community'], $snmpsysdescr, 
 		$host['snmp_version'], $host['snmp_username'], $host['snmp_password'], 
 		$host['snmp_auth_protocol'], $host['snmp_priv_passphrase'], $host['snmp_priv_protocol'],
 		$host['snmp_context'] );
 		$hostrecord_array['snmp_sysDescr'] = $host['snmp_sysDescr'];
-		extdb_log('host_id: '.$host['snmp_sysDescr']);
+extdb_log('host_id: '.$host['snmp_sysDescr']);
 	}
 	
 	// do it for Cisco model
@@ -719,14 +819,22 @@ extdb_log('extenddb_api_device_new Exit Extenddb not cisco' );
 		$hostrecord_array['isPhone'] = form_input_validate('off', 'isPhone', '', true, 3);
 	}
 
-	$host_extend_record['serial_no'] = get_SN( $host, $host['snmp_sysObjectID'] );
-	$host['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
+	$serial_nos = get_SN( $host, $host['snmp_sysObjectID'] );
+	foreach(explode( '|', $serial_nos) as $key => $serial_no ) {
+		$mysql_insert = "INSERT INTO plugin_extenddb_host_serial_no (id, host_id, serial_no) VALUES('".$key."', '".$hostrecord_array['id']."', '".$serial_no."')
+		ON DUPLICATE KEY UPDATE serial_no='".$serial_no."'";
+		db_execute($mysql_insert);
+extdb_log('extenddb_api_device_new End Extenddb serial_no: '.print_r($mysql_insert, true) );
+	}
 
-	$host['model'] = get_model( $host );
+	$models = get_model( $host );
+	foreach(explode( '|', $models) as $key => $model ) {
+		$mysql_insert = "INSERT INTO plugin_extenddb_host_model (id, host_id, model) VALUES('".$key."', '".$hostrecord_array['id']."', '".$model."') 
+		ON DUPLICATE KEY UPDATE model='".$model."'";
+		db_execute($mysql_insert);
+extdb_log('extenddb_api_device_new End Extenddb model: '.print_r($mysql_insert, true) );
+	}
 
-	sql_save($host, 'host');
-
-extdb_log('extenddb_api_device_new End Extenddb: '.$host['model'].'-'.$host['serial_no'] );
 	return $hostrecord_array;
 }
 
@@ -814,11 +922,7 @@ extdb_log('get_model data_model1: '.$data_model );
 				$regex = '~(.[0-9.]+)\.([0-9]+)~';
 				preg_match( $regex, $oid_model, $result ); // extract base of the OID from the DB (left part)
 				$stacksnmpswnum = $result[1];
-		/*
-				$regex = '~.[0-9].*\.([0-9].*)~';
-				preg_match( $regex, $stackitem['oid'], $result ); // extract the OID of the switch number from the snmp query
-				$stacksnmpno = $stacksnmpswnum.'.'.$result[2];
-	*/
+
 			if( $stackitem == 1 ) $stacksnmpno = $stacksnmpswnum.'.1000';
 			else $stacksnmpno = $stacksnmpswnum.'.11000';
 			
@@ -854,12 +958,7 @@ extdb_log('get_model data_model2: '.$data_model );
 extdb_log('get_model data_model3: '.$data_model );
 	}
 
-/*
-	$data_model = cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $oid_model, 
-	$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
-	$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
-	$hostrecord_array['snmp_context'] );
-*/
+
 	if( empty($data_model) ) {
 		extdb_log( "Can t find model No for : " . $hostrecord_array['description'].'(oid:'.$hostrecord_array['snmp_sysObjectID'].') at: '. $oid_model);
 	}
@@ -992,30 +1091,38 @@ function extenddb_device_action_prepare($save) {
 	return $save;
 }
 
-function update_sn_model( $hostrecord_array, $force=false ) {
-	if( $hostrecord_array['status']!= '3' and !$force) {
-	extdb_log('Host not up: '.$hostrecord_array['description']);
+function update_sn_model( $host, $force=false ) {
+	if( $host['status']!= '3' and !$force) {
+	extdb_log('Host not up: '.$host['description']);
 	// host down do nothing
 		return;
 	}
 	
-	extdb_log('host: ' . $hostrecord_array['description'] );
-		$host_extend_record['serial_no'] = get_SN( $hostrecord_array, $hostrecord_array['snmp_sysObjectID'] );
-		if( $host_extend_record['serial_no'] == 'U' ) {
-			extdb_log('can t SNMP read SN on ' . $hostrecord_array['description'] );
+	extdb_log('host: ' . $host['description'] );
+	$serial_nos = get_SN( $host, $host['snmp_sysObjectID'] );
+	foreach(explode( '|', $serial_nos) as $key => $serial_no ) {
+		if( $serial_no == 'U' ) {
+			extdb_log('can t SNMP read SN on ' . $host['description'] );
 			return;
 		}
-		
-		$hostrecord_array['serial_no'] = form_input_validate($host_extend_record['serial_no'], 'serial_no', '', true, 3);
-		$hostrecord_array['model'] = get_model( $hostrecord_array );
-		if( $hostrecord_array['model'] == 'U' ) {
-			extdb_log('can t SNMP read model of ' . $hostrecord_array['description'] );
-			return;
-		}
-	extdb_log('SN: ' . $hostrecord_array['serial_no'] );
-	extdb_log('model: ' . $hostrecord_array['model'] );
+		$mysql_insert = "INSERT INTO plugin_extenddb_host_serial_no (id, host_id, serial_no) VALUES('".$key."', '".$host['id']."', '".$serial_no."')
+		ON DUPLICATE KEY UPDATE serial_no='".$serial_no."'";
+		db_execute($mysql_insert);
+extdb_log('extenddb_api_device_new End Extenddb serial_no: '.print_r($mysql_insert, true) );
+	}
 
-	sql_save($hostrecord_array, 'host');
+	$models = get_model( $host );
+	foreach(explode( '|', $models) as $key => $model ) {
+		if( $model == 'U' ) {
+			extdb_log('can t SNMP read model of ' . $host['description'] );
+			return;
+		}
+		$mysql_insert = "INSERT INTO plugin_extenddb_host_model (id, host_id, model) VALUES('".$key."', '".$host['id']."', '".$model."') 
+		ON DUPLICATE KEY UPDATE model='".$model."'";
+		db_execute($mysql_insert);
+extdb_log('extenddb_api_device_new End Extenddb model: '.print_r($mysql_insert, true) );
+	}
+
 }
 
 function extdb_log( $text ){
@@ -1093,19 +1200,23 @@ function fill_model_db(){
 
 function data_export () {
 		// export CSV device list
-		$dbquery = db_fetch_assoc("SELECT description, hostname, model, serial_no FROM host 
-		WHERE status = '3' AND disabled != 'on'
-		AND snmp_sysDescr LIKE '%cisco%'
-		AND snmp_version>0
-		ORDER BY id");
-		
-		$stdout = fopen('php://output', 'w');
+		$dbquery = db_fetch_assoc("SELECT host.description as Description, host.hostname as Hostname, plugin_extenddb_host_model.model as Model, plugin_extenddb_host_serial_no.serial_no as Serial_no
+        FROM host
+		INNER JOIN plugin_extenddb_host_model ON plugin_extenddb_host_model.host_id=host.id
+		INNER JOIN plugin_extenddb_host_serial_no ON plugin_extenddb_host_serial_no.host_id=host.id
+		WHERE host.status = '3' AND host.disabled != 'on'
+		AND host.snmp_sysDescr LIKE '%cisco%'
+		AND host.snmp_version>0
+		GROUP BY plugin_extenddb_host_serial_no.serial_no
+        ORDER BY host.id");
 
-		header('Content-type: application/excel');
+		header('Content-Type: text/csv');
 		header('Content-Disposition: attachment; filename=cacti-devices-type-sn.csv');
+		$stdout = fopen('php://output', 'w');
 	
 		$header = array_keys($dbquery[0]);
 		fputcsv($stdout, $header);
+extdb_log('data_export: header output: '.print_r($header,true));		
 
 		foreach($dbquery as $h) {
 			fputcsv($stdout, $h );
@@ -1136,14 +1247,11 @@ function extenddb_device_sql_where($sql_where) {
 		$models[] = $list['model'];
 	}
 
-	if (get_request_var('model') == 0 ) {
-		$sql_where .= ($sql_where != '' ? ' AND ':'WHERE ') . " model = ''";
-	} else if (get_request_var('model') == -1) {
-		$sql_where .= '';
-	} else {
-		$sql_where .= ($sql_where != '' ? ' AND ':'WHERE ') . " model = '" . $models[get_request_var('model')]."'";
-	}
+	if (get_request_var('model') >= 0 ) {
+		($sql_where != '' ? $sql_where=" INNER JOIN plugin_extenddb_host_model pehm ON pehm.host_id=host.id ". $sql_where ." AND pehm.model='".$models[get_request_var('model')]."'" :$sql_where=" INNER JOIN plugin_extenddb_host_model pehm ON pehm.host_id=host.id ". $sql_where ." AND pehm.model='".$models[get_request_var('model')]."'" );
 
+	}
+	
 	return $sql_where;
 }
 
@@ -1192,6 +1300,7 @@ function extenddb_device_table_bottom() {
 		strURL += '&host_template_id=' + $('#host_template_id').val();
 		strURL += '&site_id=' + $('#site_id').val();
 		strURL += '&model=' + $('#model').val();
+		strURL += '&criticality=' + $('#criticality').val();
 		strURL += '&poller_id=' + $('#poller_id').val();
 		strURL += '&rows=' + $('#rows').val();
 		strURL += '&filter=' + $('#filter').val();

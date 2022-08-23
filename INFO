@@ -1,6 +1,6 @@
 [info]
 name = extenddb
-version = 1.3.8
+version = 1.4.0
 longname = Host extension
 author = Arno Streuli
 email = astreuli@gmail.com
