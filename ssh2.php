@@ -105,14 +105,17 @@ extdb_log('ssh_read_stream - Error - No output');
     return false;
 }
 
-function ssh_write_stream( $stream, $cmd){
+function ssh_write_stream( $stream, $cmd, $timeout=210){
 	if( $stream == null ) return;
+	$oldtimeout = $timeout;
+	stream_set_timeout($stream, $timeout);
 
     do {
         $write = fwrite( $stream, $cmd.PHP_EOL );
 	} while( $write < strlen($cmd) );
 
 extdb_log('ssh_write_stream: '.$cmd .' ('.strlen($cmd).')');
+	stream_set_timeout($stream, $oldtimeout);
 
 }
 ?>
