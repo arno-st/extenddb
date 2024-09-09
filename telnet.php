@@ -115,7 +115,7 @@ function telnet_read_stream($stream, $term='#') {
 
 function telnet_write_stream( $stream, $cmd){
     do {
-        $write = fwrite( $stream, $cmd.PHP_EOL );
+        $write = fwrite( $stream, $cmd."\n\r" );
 	} while( $write < strlen($cmd) );
 }
 

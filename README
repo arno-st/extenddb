@@ -44,3 +44,7 @@
 1.3.7 isPhone was not saved when changed on a device
 1.3.8 Add the management for stack (or vss) device, n serials number and n model in the stack, adapted the count of model type
 1.4.0 Add 2 news table: serial number, and model all linked to host id tp be able to manage stack of switch (same IP, same name, but can have more than 1 device in it. need to adapt all plug in about it.
+1.4.1 Improve the save after an edition of a device
+1.4.2 Change the approche of model and serial_number. Filled after a call to host_edit_bottom, and not on the form. Allow to make a call to a function to fill the value manually if empty
+1.4.3 Add purge of disabled device that are not connected anymore (test with ping only)
+1.4.4 Add check for isWifi device if still reaching by ping or not, if not delete it. add information when running utilities function

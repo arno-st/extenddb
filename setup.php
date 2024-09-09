@@ -23,6 +23,19 @@
 */
 include_once($config['base_path'] . '/plugins/extenddb/ssh2.php');
 include_once($config['base_path'] . '/plugins/extenddb/telnet.php');
+include_once($config['base_path'] . '/lib/ping.php');
+
+require_once($config['base_path'] . '/lib/api_automation_tools.php');
+require_once($config['base_path'] . '/lib/api_automation.php');
+require_once($config['base_path'] . '/lib/api_data_source.php');
+require_once($config['base_path'] . '/lib/api_graph.php');
+require_once($config['base_path'] . '/lib/api_device.php');
+require_once($config['base_path'] . '/lib/api_tree.php');
+require_once($config['base_path'] . '/lib/data_query.php');
+require_once($config['base_path'] . '/lib/poller.php');
+require_once($config['base_path'] . '/lib/snmp.php');
+require_once($config['base_path'] . '/lib/sort.php');
+require_once($config['base_path'] . '/lib/template.php');
 
 function plugin_extenddb_install() {
 	global $config;
@@ -30,6 +43,7 @@ function plugin_extenddb_install() {
 	api_plugin_register_hook('extenddb', 'config_settings', 'extenddb_config_settings', 'setup.php');
 	api_plugin_register_hook('extenddb', 'config_form', 'extenddb_config_form', 'setup.php');
 	api_plugin_register_hook('extenddb', 'api_device_new', 'extenddb_api_device_new', 'setup.php');
+// utilities action
 	api_plugin_register_hook('extenddb', 'utilities_action', 'extenddb_utilities_action', 'setup.php');
 	api_plugin_register_hook('extenddb', 'utilities_list', 'extenddb_utilities_list', 'setup.php');
 
@@ -39,11 +53,17 @@ function plugin_extenddb_install() {
     api_plugin_register_hook('extenddb', 'device_action_prepare', 'extenddb_device_action_prepare', 'setup.php');
 	api_plugin_register_hook('extenddb', 'device_remove', 'extenddb_api_device_remove', 'setup.php');
 
-	/* add new filter for device */
+// add new filter for device
 	api_plugin_register_hook('extenddb', 'device_filters', 'extenddb_device_filters', 'setup.php');
 	api_plugin_register_hook('extenddb', 'device_sql_where', 'extenddb_device_sql_where', 'setup.php');
 	api_plugin_register_hook('extenddb', 'device_table_bottom', 'extenddb_device_table_bottom', 'setup.php');
+	
+// host edit form, used to fill the model and serial number, or allow to enter one (same format of the extenddb model and serial no)
+	api_plugin_register_hook('extenddb', 'host_edit_bottom', 'extenddb_host_edit_bottom', 'setup.php');
 
+	extenddb_setup_table(); // setup the table if new install
+	fill_model_db(); // place where new device are added
+	
 }
 
 function plugin_extenddb_uninstall () {
@@ -51,6 +71,7 @@ function plugin_extenddb_uninstall () {
 
 	// Remove items from the settings table
 	db_execute('ALTER TABLE host DROP COLUMN isPhone');
+	db_execute('ALTER TABLE host DROP COLUMN isWifi');
 	db_execute('DROP TABLE plugin_extenddb_host_model');
 	db_execute('DROP TABLE plugin_extenddb_host_serial_no');
 }
@@ -168,9 +189,13 @@ function extenddb_check_upgrade() {
 			}
 			api_plugin_register_hook('extenddb', 'device_remove', 'extenddb_api_device_remove', 'setup.php');
 		}
-	} else {
-		extenddb_setup_table(); // setup the table if new install
-		fill_model_db(); // place where new device are added
+		if( $old < '1.4.1' ) {
+			api_plugin_db_add_column ('extenddb', 'host', array('name' => 'isWifi', 'type' => 'char(2)', 'NULL' => true, 'default' => ''));
+		}
+		if( $old < '1.4.2' ) {
+			api_plugin_register_hook('extenddb', 'host_edit_bottom', 'extenddb_host_edit_bottom', 'setup.php');
+		}
+
 	}
 }
 
@@ -216,6 +241,10 @@ function extenddb_setup_table() {
 	$data['keys'][] = array('name' => 'model', 'columns' => 'model');
 	$data['type'] = 'InnoDB';
 	api_plugin_db_table_create('extenddb', 'plugin_extenddb_model', $data);
+
+	api_plugin_db_add_column ('extenddb', 'host', array('name' => 'isWifi', 'type' => 'char(2)', 'NULL' => true, 'default' => ''));
+	api_plugin_db_add_column ('extenddb', 'host', array('name' => 'isPhone', 'type' => 'char(2)', 'NULL' => true, 'default' => ''));
+		
 }
 
 function extenddb_api_device_remove( $host_id ){
@@ -232,6 +261,9 @@ extdb_log('extenddb_api_device_remove remove from model table: '.print_r($host_i
 }
 
 function extenddb_config_form () {
+	
+	// 'value' => db_fetch_cell_prepared('SELECT description FROM host WHERE id = ?', array($host_id)),
+
 	global $fields_host_edit;
 	$fields_host_edit2 = $fields_host_edit;
 	$fields_host_edit3 = array();
@@ -252,20 +284,27 @@ function extenddb_config_form () {
 				'sql' => 'SELECT id, serial_no AS name FROM plugin_extenddb_host_serial_no WHERE host_id="|arg1:id|"',
 				'default' => '',
 			);
-			$fields_host_edit3['model'] = array(
-				'friendly_name' => 'Model',
-				'description' => 'This is the model of equipement.',
-				'method' => 'drop_sql',
-				'max_length' => 50,
-				'value' => '|arg1:model|',
-				'sql' => 'SELECT id, model AS name FROM plugin_extenddb_host_model WHERE host_id="|arg1:id|"',
+            $fields_host_edit3['model'] = array(
+                'friendly_name' => 'Model',
+                'description' => 'This is the model of equipement.',
+                'method' => 'drop_sql',
+                'max_length' => 50,
+                'sql' => 'SELECT id, model AS name FROM plugin_extenddb_host_model WHERE host_id="|arg1:id|"',
+                'value' => '|arg1:model|',
 				'default' => '',
-			);
+            );
 			$fields_host_edit3['isPhone'] = array(
 				'friendly_name' => 'isPhone',
 				'description' => 'Is it a phone ?',
 				'method' => 'checkbox',
 				'value' => '|arg1:isPhone|',
+				'default' => '',
+			);
+			$fields_host_edit3['isWifi'] = array(
+				'friendly_name' => 'isWifi',
+				'description' => 'Is it a WiFi AP ?',
+				'method' => 'checkbox',
+				'value' => '|arg1:isWifi|',
 				'default' => '',
 			);
 		}
@@ -279,65 +318,100 @@ function extenddb_utilities_list () {
 	form_alternate_row();
 	?>
 		<td class="textArea">
-			<a href='utilities.php?action=extenddb_complete'>Complete Serial Number and Model.</a>
+			<a href='utilities.php?action=extenddb_complete'>Complete Serial Number and Model</a>
 		</td>
 		<td class="textArea">
-			Complete Serial Number anb Model of all non filed device.
+			Complete Serial Number anb Model of all non filed device
 		</td>
 	<?php
 	form_end_row();
 	form_alternate_row();
 	?>
 		<td class="textArea">
-			<a href='utilities.php?action=extenddb_rebuild'>Recheck All Cisco Device.</a>
+			<a href='utilities.php?action=extenddb_rebuild'>Recheck All Cisco Device</a>
 		</td>
 		<td class="textArea">
-			Build Serial Number anb Model of All Cisco Device.
+			Build Serial Number anb Model of All Cisco Device
 		</td>
 	<?php
 	form_end_row();
 	form_alternate_row();
 	?>
 		<td class="textArea">
-			<a href='<?php print $config['url_path'] . 'plugins/extenddb/'?>extenddb_type.php?action=display_model_db'>Edit the ExtendDB table.</a>
+			<a href='<?php print $config['url_path'] . 'plugins/extenddb/'?>extenddb_type.php?action=display_model_db'>Edit the ExtendDB table</a>
 		</td>
 		<td class="textArea">
-			Change, add or remove a model entry on the ExtendDB table.
+			Change, add or remove a model entry on the ExtendDB table
 		</td>
 	<?php
 	form_end_row();
 	form_alternate_row();
-		print "<td class='nowrap' style='vertical-align:top;'> <a class='hyperLink' href='utilities.php?action=extenddb_count'>ExtendDB model count</a></td>\n";
-		print "<td>Count the number of each device model.</td>\n";
+	?>
+		<td class="textArea">
+			<a href='utilities.php?action=extenddb_purge_wifi'>Remove inexistant WiFi devices</a>
+		</td>
+		<td class="textArea">
+			Purge the DB with WiFi devices that are not connected anymore
+		</td>
+	<?php
 	form_end_row();
 	form_alternate_row();
-		print "<td class='nowrap' style='vertical-align:top;'> <a class='hyperLink' href='utilities.php?action=extenddb_export_model_SN'>ExtendDB Export Model and SN</a></td>\n";
-		print "<td>Export in CSV format, the model and SN of all active device.</td>\n";
+	?>
+		<td class="textArea">
+			<a href='utilities.php?action=extenddb_purge'>Remove inexistant devices</a>
+		</td>
+		<td class="textArea">
+			Purge the DB with  devices that are not connected anymore
+		</td>
+	<?php
 	form_end_row();
-
+	form_alternate_row();
+	?>
+		<td class="textArea">
+			<a href='utilities.php?action=extenddb_count'>ExtendDB model count</a>
+		</td>
+		<td class="textArea">
+			Count the number of each device model
+		</td>
+	<?php
+	form_end_row();
+	form_alternate_row();
+	?>
+		<td class="textArea">
+			<a href='utilities.php?action=extenddb_export_model_SN'>ExtendDB Export Model and SN</a>
+		</td>
+		<td class="textArea">
+			Export in CSV format, the model and SN of all active device
+		</td>
+	<?php
+	form_end_row();
 }
 
 function extenddb_utilities_action ($action) {
-	global $item_rows;
+	global $config, $item_rows;
 	
-	if ( $action == 'extenddb_complete' || $action == 'extenddb_rebuild' ){
-		if ($action == 'extenddb_complete') {
+cacti_log( 'Extenddb utilities start: '.$action, false, "EXTENDDB" ); // Log somme information on cactilog
+	
+	if ($action == 'extenddb_complete') {
 	// get device list,  where serial number is empty, or model
-			$dbquery = db_fetch_assoc("SELECT * FROM host 
-			LEFT JOIN plugin_extenddb_host_serial_no AS pehs ON pehs.host_id=host.id
-			LEFT JOIN plugin_extenddb_host_model AS pehm ON pehm.host_id=host.id
-			WHERE (pehs.host_id IS NULL OR pehm.host_id IS NULL)
-            AND host.status = '3' AND host.disabled != 'on'
-			AND host.snmp_sysDescr LIKE '%cisco%'
-			AND host.snmp_version>0
-			ORDER BY host.id");
-		// Upgrade the extenddb value
-			if( $dbquery > 0 ) {
-				foreach ($dbquery as $host) {
-					update_sn_model( $host );
-				}
+		$dbquery = db_fetch_assoc("SELECT * FROM host 
+		LEFT JOIN plugin_extenddb_host_serial_no AS pehs ON pehs.host_id=host.id
+		LEFT JOIN plugin_extenddb_host_model AS pehm ON pehm.host_id=host.id
+		WHERE (pehs.serial_no IS NULL OR pehs.serial_no = '' OR pehm.model IS NULL OR pehm.model ='')
+           AND host.status = '3' AND host.disabled != 'on'
+		AND host.snmp_sysDescr LIKE '%cisco%'
+		AND host.snmp_version>0
+		ORDER BY host.id");
+	// Upgrade the extenddb value
+		if( $dbquery > 0 ) {
+			foreach ($dbquery as $host) {
+				update_sn_model( $host );
 			}
-		} else if ($action == 'extenddb_rebuild') {
+		}
+		top_header();
+		utilities();
+		bottom_footer();
+	} elseif ($action == 'extenddb_rebuild') {
 	// get device list
 			$dbquery = db_fetch_assoc("SELECT  * FROM host 
 			WHERE status = '3' AND disabled != 'on'
@@ -350,6 +424,69 @@ function extenddb_utilities_action ($action) {
 					update_sn_model( $host );
 				}
 			}
+		top_header();
+		utilities();
+		bottom_footer();
+	} elseif ($action=='extenddb_purge_wifi' ) {
+		// purge the device that are not pingable
+			// get device list
+			$dbquery = "SELECT * FROM host WHERE disabled='on'
+				AND availability > 0
+				AND isWifi = 'on'
+				ORDER BY id";
+		$extenddb_purge_wifi = db_fetch_assoc($dbquery);
+extdb_log('extenddb_utilities_action nb device: '. count($extenddb_purge_wifi) );
+		if( $extenddb_purge_wifi > 0 ) {
+			foreach ($extenddb_purge_wifi as $host) {
+				// create new ping socket for host pinging
+				$ping = new Net_Ping;
+
+				$ping->host = $host;
+				$ping->port = $host['ping_port'];
+		
+				// perform the appropriate ping check of the host, 100ms TimeOut, and just 2 retries
+				$ping_results = $ping->ping(AVAIL_PING, $host['ping_method'], 100, 1);
+	
+				if ($ping_results === true) {
+extdb_log('extenddb_utilities_action dont purge wifi device: '. $host['id']. ' description: '. $host['description'] );
+				} else {
+extdb_log('extenddb_utilities_action purge wifi device: '. $host['id']. ' description: '. $host['description'].' reps: '.$ping->ping_response );
+					  api_device_remove( $host['id'] );
+				}
+			}
+extdb_log('extenddb_utilities_action end purge: ' );
+		}
+		top_header();
+		utilities();
+		bottom_footer();
+	} elseif ($action=='extenddb_purge' ) {
+		// purge the disabled device that are not pingable
+			// get device list
+			$dbquery = "SELECT * FROM host WHERE disabled='on'
+				AND availability > 0
+				AND isWifi != 'on'
+				ORDER BY id";
+		$extenddb_purge = db_fetch_assoc($dbquery);
+extdb_log('extenddb_utilities_action nb device: '. count($extenddb_purge) );
+		if( $extenddb_purge > 0 ) {
+			foreach ($extenddb_purge as $host) {
+				// create new ping socket for host pinging
+				$ping = new Net_Ping;
+
+				$ping->host = $host;
+				$ping->port = $host['ping_port'];
+		
+				// perform the appropriate ping check of the host, 10ms TimeOut, and just 2 retries
+				$ping_results = $ping->ping(AVAIL_PING, $host['ping_method'], 10, 1);
+	
+				if ($ping_results === true) {
+extdb_log('extenddb_utilities_action dont purge device: '. $host['id']. ' description: '. $host['description'] );
+				} else {
+extdb_log('extenddb_utilities_action purge device: '. $host['id']. ' description: '. $host['description'].' reps: '.$ping->ping_response );
+					  api_device_remove( $host['id'] );
+				}
+			}
+extdb_log('extenddb_utilities_action end purge: ' );
 		}
 		top_header();
 		utilities();
@@ -750,6 +887,8 @@ extdb_log('type display query: '.$extenddb_display_sql);
 		</script>
 	<?php
 	} 
+cacti_log( 'Extenddb utilities end: '. $action, false, "EXTENDDB" ); // Log somme information on cactilog
+
 	return $action;
 }
 
@@ -757,22 +896,22 @@ function extenddb_api_device_new($hostrecord_array) {
 $snmpsysobjid = ".1.3.6.1.2.1.1.2.0"; // ObjectID
 $snmpsysdescr = ".1.3.6.1.2.1.1.1.0"; // system description
 
-extdb_log('extenddb_api_device_new: '.$hostrecord_array['description'] );
+extdb_log('extenddb_api_device_new: '.print_r($hostrecord_array['description'], true) );
 
 // check valid call
 	if( !array_key_exists('disabled', $hostrecord_array ) ) {
-			extdb_log('extenddb_api_device_new Not valid call: '. print_r($hostrecord_array, true) );
+			extdb_log('extenddb_api_device_new Not valid call: '. $hostrecord_array['description'] .' '. $hostrecord_array['hostname']);
 		return $hostrecord_array;
 	}
 
 	// get valid host from DB
 	$host = db_fetch_row("SELECT * FROM host WHERE hostname='".$hostrecord_array['hostname']."' OR description='".$hostrecord_array['description']."'");
 	if( empty($host) ){
-			extdb_log('extenddb_api_device_new Unknown hostname in Extenddb:'. print_r($hostrecord_array, true) );
+			extdb_log('extenddb_api_device_new Unknown hostname in Extenddb:'. $hostrecord_array['description'] .' '. $hostrecord_array['hostname'] );
 		return $hostrecord_array;
 	}
 	
-	// don't do it for disabled and no snmp
+	// don't do it for Phone and Wifi
 	if ($host['isPhone'] == 'On' ) {
 			extdb_log('extenddb_api_device_new Exit Extenddb skip for phone');
 		return $hostrecord_array;
@@ -794,7 +933,7 @@ extdb_log('extenddb_api_device_new Exit Extenddb Disabled or no snmp');
 		
 		$regex = '~.[0-9].*\.([0-9].*)~';
 		preg_match( $regex, $host_data, $result ); // extract the OID of the switch number from the snmp query
-extdb_log('extenddb_api_device_new host_data: '. print_r($host_data, true));
+extdb_log('extenddb_api_device_new host_data: '. $hostrecord_array['description'] .' '. $hostrecord_array['hostname'].' '.$host['snmp_sysObjectID']);
 		$host['snmp_sysObjectID'] = 'iso.3.6.1.4.1.9.1.'.$result[1];
 		$hostrecord_array['snmp_sysObjectID'] = $host['snmp_sysObjectID'];
 extdb_log('host_data: '.$host['snmp_sysObjectID']);
@@ -812,27 +951,46 @@ extdb_log('host_id: '.$host['snmp_sysDescr']);
 extdb_log('extenddb_api_device_new Exit Extenddb not cisco' );
 		return $hostrecord_array;
 	}
-
+/*
 	if (isset_request_var('isPhone')) {
 		$hostrecord_array['isPhone'] = form_input_validate(get_nfilter_request_var('isPhone'), 'isPhone', '', true, 3);
 	} else {
 		$hostrecord_array['isPhone'] = form_input_validate('off', 'isPhone', '', true, 3);
 	}
+*/
 
+//****** check the serial 
 	$serial_nos = get_SN( $host, $host['snmp_sysObjectID'] );
-	foreach(explode( '|', $serial_nos) as $key => $serial_no ) {
-		$mysql_insert = "INSERT INTO plugin_extenddb_host_serial_no (id, host_id, serial_no) VALUES('".$key."', '".$hostrecord_array['id']."', '".$serial_no."')
-		ON DUPLICATE KEY UPDATE serial_no='".$serial_no."'";
-		db_execute($mysql_insert);
+	if( empty($serial_nos) ) {
+		extdb_log('extenddb_api_device_new can t SNMP read SN on ' . $host['description'] );
+		return $hostrecord_array;
+	}
+	if ( array_key_exists('id', $hostrecord_array)) {
+		foreach(explode( '|', $serial_nos) as $key => $serial_no ) {
+			$mysql_insert = "INSERT INTO plugin_extenddb_host_serial_no (id, host_id, serial_no) VALUES('".$key."', '".$hostrecord_array['id']."', '".$serial_no."')
+			ON DUPLICATE KEY UPDATE serial_no='".$serial_no."'";
+			db_execute($mysql_insert);
 extdb_log('extenddb_api_device_new End Extenddb serial_no: '.print_r($mysql_insert, true) );
+		}
+	} else {
+		cacti_log( 'Cant find Serial for device: '.$host['description'], false, "EXTENDDB" );
 	}
 
+//****** check the model
 	$models = get_model( $host );
-	foreach(explode( '|', $models) as $key => $model ) {
-		$mysql_insert = "INSERT INTO plugin_extenddb_host_model (id, host_id, model) VALUES('".$key."', '".$hostrecord_array['id']."', '".$model."') 
-		ON DUPLICATE KEY UPDATE model='".$model."'";
-		db_execute($mysql_insert);
-extdb_log('extenddb_api_device_new End Extenddb model: '.print_r($mysql_insert, true) );
+	if( empty($models) ) {
+		extdb_log('extenddb_api_device_new can t SNMP read model on ' . $host['description'] );
+		return $hostrecord_array;
+	}
+	if (array_key_exists('id', $hostrecord_array)) {
+		foreach(explode( '|', $models) as $key => $model ) {
+			$mysql_insert = "INSERT INTO plugin_extenddb_host_model (id, host_id, model) VALUES('".$key."', '".$hostrecord_array['id']."', '".$model."') 
+			ON DUPLICATE KEY UPDATE model='".$model."'";
+			db_execute($mysql_insert);
+	extdb_log('extenddb_api_device_new End Extenddb model: '.print_r($mysql_insert, true) );
+		}
+	} else {
+		cacti_log( 'Cant find Model for device: '.$host['description'], false, "EXTENDDB" );
 	}
 
 	return $hostrecord_array;
@@ -871,7 +1029,10 @@ function extenddb_check_dependencies() {
 	return true;
 }
 
-function get_model( $hostrecord_array ) {
+/*
+Query the device to have the model of the device, based on the SysObjectID find by cacti, and a table inside extenddb
+*/
+function get_model( $hostrecord_array, $force=false ) {
 	$snmp_stackinfo = ".1.3.6.1.4.1.9.9.500.1.2.1.1.1"; // will return an array of switch number, the id last number of the OID
 	$snmp_vssinfo = ".1.3.6.1.4.1.9.9.388.1.2.2.1.1"; // will return an array of switch number in a vss
 
@@ -893,7 +1054,7 @@ extdb_log('get_model oid_model: '.$oid_model );
 	$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
 	$hostrecord_array['snmp_context'] ); // count() if 0 mean no stack possibility, or can't read (4500x)
 
-	extdb_log('get_model stacknumber: '.print_r($stacknumber, true) );
+extdb_log('get_model stacknumber: '.print_r($stacknumber, true) );
 
 	$data_model = '';
 	if( count($stacknumber) == 0) { // VSS ? or no answer to CISCO-STACKWISE-MIB
@@ -909,12 +1070,14 @@ extdb_log('get_model vssnumber: '.print_r($vssnumber, true) );
 			$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
 			$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
 			$hostrecord_array['snmp_context'] );
+			if( $force ) {
+				cacti_log('get_model '.$hostrecord_array['hostname'].' data_model: '.print_r($data_model, true), FALSE, "EXTENDDB");
+				cacti_log('get_model SN: '.$hostrecord_array['hostname'].' '. $hostrecord_array['snmp_community'].' '. $oid_model.' '. 
+			$hostrecord_array['snmp_version'].' '. $hostrecord_array['snmp_username'].' '.$hostrecord_array['snmp_auth_protocol'].' '.
+			$hostrecord_array['snmp_priv_protocol'].' x'.$hostrecord_array['snmp_context'].'x', FALSE, "EXTENDDB");
+			}
 
 extdb_log('get_model data_model1: '.$data_model );
-
-			if( empty($data_model) ) {
-				extdb_log("Can t find serial No for : " . $hostrecord_array['description'] .'(oid:'.$hostrecord_array['snmp_sysObjectID'].') at: '. $oid_model );
-			}
 		} else {
 			// if VSS of 4500-X the device number are 1000 or 11000, can't find relationship with vssnumber
 			foreach( $vssnumber as $stackitem ) {
@@ -938,6 +1101,7 @@ extdb_log('get_model data_model2: '.$data_model );
 
 		}
 	} else {
+extdb_log("get_model stacknumber for : " . $hostrecord_array['description'] .' nb:'. print_r($stacknumber, true) );
 		foreach( $stacknumber as $stackitem ) {
 			$regex = '~(.[0-9.]+)\.([0-9]+)~';
 			preg_match( $regex, $oid_model, $result ); // extract base of the OID from the DB (left part)
@@ -946,6 +1110,7 @@ extdb_log('get_model data_model2: '.$data_model );
 			$regex = '~.[0-9].*\.([0-9].*)~';
 			preg_match( $regex, $stackitem['oid'], $result ); // extract the OID of the switch number from the snmp query
 			$stacksnmpno = $stacksnmpswnum.'.'.$result[1];
+extdb_log("get_model stacknumber for : " . $hostrecord_array['description'] .' nb:'. print_r($stacksnmpno, true) );
 
 			$data_model .= '|' . cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $stacksnmpno, 
 			$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
@@ -960,18 +1125,26 @@ extdb_log('get_model data_model3: '.$data_model );
 
 
 	if( empty($data_model) ) {
+		if( $force ) {
+			cacti_log("Can t find model No for : " . $hostrecord_array['description'] .' '. $hostrecord_array['hostname'].' '.
+			$hostrecord_array['snmp_sysObjectID'].' '.$hostrecord_array['snmp_sysObjectID'], TRUE, "EXTENDDB");
+		}
 		extdb_log( "Can t find model No for : " . $hostrecord_array['description'].'(oid:'.$hostrecord_array['snmp_sysObjectID'].') at: '. $oid_model);
 	}
 
 	return $data_model;
 }
 
-function get_SN( $hostrecord_array, $SysObjId ){
+/*
+Query the device to have the serial  number, based on the SysObjectID find by cacti, and a table inside extenddb
+*/
+function get_SN( $hostrecord_array, $SysObjId, $force=false ){
 	$snmp_stackinfo = "1.3.6.1.4.1.9.9.500.1.2.1.1.1"; // will return an array of switch number, the id last number of the OID
 	$snmp_vssinfo = "1.3.6.1.4.1.9.9.388.1.2.2.1.1"; // will return an array of switch number in a vss
 	
 //snmp_SysObjectId, oid_model, oid_sn, model
 	$sqlquery = "SELECT * FROM plugin_extenddb_model WHERE snmp_SysObjectId='".$SysObjId."'";
+extdb_log('get_SN SysObjId: '.$SysObjId );
 
 	$result = db_fetch_row($sqlquery);
 	if( empty($result) ) {
@@ -980,12 +1153,14 @@ function get_SN( $hostrecord_array, $SysObjId ){
 	} else {
 		$snmpserialno =  $result['oid_sn'];
 	}
+extdb_log('get_SN SerialNo: '.$snmpserialno );
 	
 	// check if we have a stack, and how many device
 	$stacknumber = cacti_snmp_walk( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $snmp_stackinfo, 
 	$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
 	$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
 	$hostrecord_array['snmp_context'] ); // count() if 0 mean no stack possibility, or can't read (4500x)
+extdb_log('get_SN stacknumber: '.print_r($stacknumber, true) );
 	
 	$serialno = '';
 	if( count($stacknumber) == 0) { // VSS ? or no answer to CISCO-STACKWISE-MIB
@@ -994,15 +1169,20 @@ function get_SN( $hostrecord_array, $SysObjId ){
 		$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
 		$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
 		$hostrecord_array['snmp_context'] ); // count() if 0 mean no stack possibility, or can't read (4500x)
+extdb_log('get_SN vssnumber: '.print_r($vssnumber, true) );
 	
 		if( count($vssnumber) == 0) { // no vss either
 			$serialno = cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $snmpserialno, 
 			$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
 			$hostrecord_array['snmp_auth_protocol'], $hostrecord_array['snmp_priv_passphrase'], $hostrecord_array['snmp_priv_protocol'],
 			$hostrecord_array['snmp_context'] );
-			if( empty($serialno) ) {
-				extdb_log("Can t find serial No for : " . $hostrecord_array['description'] .'(oid:'.$hostrecord_array['snmp_sysObjectID'].') at: '. $snmpserialno );
+			if( $force ) {
+				cacti_log('get_SN '.$hostrecord_array['hostname'].' serialno: '.print_r($serialno, true), FALSE, "EXTENDDB");
+				cacti_log('debug SN: '.$hostrecord_array['hostname'].' '. $hostrecord_array['snmp_community'].' '. $snmpserialno.' '. 
+			$hostrecord_array['snmp_version'].' '. $hostrecord_array['snmp_username'].' '.$hostrecord_array['snmp_auth_protocol'].' '.
+			$hostrecord_array['snmp_priv_protocol'].' x'.$hostrecord_array['snmp_context'].'x', FALSE, "EXTENDDB");
 			}
+extdb_log('get_SN serialno: '.print_r($serialno, true) );
 		} else {
 			foreach( $vssnumber as $stackitem ) {
 				$regex = '~(.[0-9.]+)\.[0-9]+~';
@@ -1022,6 +1202,7 @@ function get_SN( $hostrecord_array, $SysObjId ){
 			$serialno = trim($serialno, '|');
 		}
 	} else {
+extdb_log("get_SN stacknumber for : " . $hostrecord_array['description'] .' nb:'. print_r($stacknumber, true) );
 		foreach( $stacknumber as $stackitem ) {
 			$regex = '~(.[0-9.]+)\.[0-9]+~';
 			preg_match( $regex, $snmpserialno, $result ); // extract base of the OID from the DB (left part)
@@ -1030,6 +1211,7 @@ function get_SN( $hostrecord_array, $SysObjId ){
 			$regex = '~.[0-9].*\.([0-9].*)~';
 			preg_match( $regex, $stackitem['oid'], $result ); // extract the OID of the switch number from the snmp query
 			$stacksnmpno = $stacksnmpswnum.'.'.$result[1];
+extdb_log("get_SN stacknumber for : " . $hostrecord_array['description'] .' nb:'. print_r($stacksnmpno, true) );
 
 			$serialno .= '|' . cacti_snmp_get( $hostrecord_array['hostname'], $hostrecord_array['snmp_community'], $stacksnmpno, 
 			$hostrecord_array['snmp_version'], $hostrecord_array['snmp_username'], $hostrecord_array['snmp_password'], 
@@ -1038,12 +1220,23 @@ function get_SN( $hostrecord_array, $SysObjId ){
 		}
 		$serialno = trim($serialno);
 		$serialno = trim($serialno, '|');
+extdb_log('get_SN serialno: '.$serialno );
+	}
+	
+	if( empty($serialno) ) {
+		if( $force ) {
+			cacti_log("get_SN Can t find SN for : " . $hostrecord_array['description'] .' '. $hostrecord_array['hostname'].' '.
+			$hostrecord_array['snmp_sysObjectID'].' '.$hostrecord_array['snmp_sysObjectID'] , TRUE, "EXTENDDB");
+		}
+
+		extdb_log( "get_SN Can t find SN for : " . $hostrecord_array['description'].'(oid:'.$hostrecord_array['snmp_sysObjectID'].') at: '. $snmpserialno);
 	}
 	return $serialno;
 }
 
 function extenddb_device_action_array($device_action_array) {
     $device_action_array['fill_extenddb'] = __('Scan for model and Serial');
+
         return $device_action_array;
 }
 
@@ -1060,7 +1253,7 @@ function extenddb_device_action_execute($action) {
 			foreach( $selected_items as $hostid ) {
 				if ($action == 'fill_extenddb') {
 					$dbquery = db_fetch_assoc("SELECT * FROM host WHERE id=".$hostid);
-extdb_log("Fill ExtendDB value: ".$hostid." - ".print_r($dbquery[0])." - ".$dbquery[0]['description']."\n");
+cacti_log("Fill ExtendDB value: ".$hostid." - ".print_r($dbquery[0])." - ".$dbquery[0]['description']."\n", FALSE, "EXTENDDB");
 					update_sn_model( $dbquery[0], true );
 				}
 			}
@@ -1093,34 +1286,34 @@ function extenddb_device_action_prepare($save) {
 
 function update_sn_model( $host, $force=false ) {
 	if( $host['status']!= '3' and !$force) {
-	extdb_log('Host not up: '.$host['description']);
+extdb_log('Host not up: '.$host['description']);
 	// host down do nothing
 		return;
 	}
 	
-	extdb_log('host: ' . $host['description'] );
-	$serial_nos = get_SN( $host, $host['snmp_sysObjectID'] );
-	foreach(explode( '|', $serial_nos) as $key => $serial_no ) {
-		if( $serial_no == 'U' ) {
-			extdb_log('can t SNMP read SN on ' . $host['description'] );
-			return;
+extdb_log('update_sn_model host: ' . $host['description'] );
+	$serial_nos = get_SN( $host, $host['snmp_sysObjectID'], $force );
+	if( !empty($serial_nos) ) {
+		foreach(explode( '|', $serial_nos) as $key => $serial_no ) {
+			$mysql_insert = "INSERT INTO plugin_extenddb_host_serial_no (id, host_id, serial_no) VALUES('".$key."', '".$host['id']."', '".$serial_no."')
+			ON DUPLICATE KEY UPDATE serial_no='".$serial_no."'";
+			db_execute($mysql_insert);
+extdb_log('update_sn_model End Extenddb serial_no: '.print_r($mysql_insert, true) );
 		}
-		$mysql_insert = "INSERT INTO plugin_extenddb_host_serial_no (id, host_id, serial_no) VALUES('".$key."', '".$host['id']."', '".$serial_no."')
-		ON DUPLICATE KEY UPDATE serial_no='".$serial_no."'";
-		db_execute($mysql_insert);
-extdb_log('extenddb_api_device_new End Extenddb serial_no: '.print_r($mysql_insert, true) );
+	} else {
+extdb_log('update_sn_model can t SNMP read SN on ' . $host['description'] );
 	}
 
-	$models = get_model( $host );
-	foreach(explode( '|', $models) as $key => $model ) {
-		if( $model == 'U' ) {
-			extdb_log('can t SNMP read model of ' . $host['description'] );
-			return;
+	$models = get_model( $host, $force );
+	if( !empty($models) ) {
+		foreach(explode( '|', $models) as $key => $model ) {
+			$mysql_insert = "INSERT INTO plugin_extenddb_host_model (id, host_id, model) VALUES('".$key."', '".$host['id']."', '".$model."') 
+			ON DUPLICATE KEY UPDATE model='".$model."'";
+			db_execute($mysql_insert);
+extdb_log('update_sn_model End Extenddb model: '.print_r($mysql_insert, true) );
 		}
-		$mysql_insert = "INSERT INTO plugin_extenddb_host_model (id, host_id, model) VALUES('".$key."', '".$host['id']."', '".$model."') 
-		ON DUPLICATE KEY UPDATE model='".$model."'";
-		db_execute($mysql_insert);
-extdb_log('extenddb_api_device_new End Extenddb model: '.print_r($mysql_insert, true) );
+	} else {
+		extdb_log('update_sn_model can t SNMP read model on ' . $host['description'] );
 	}
 
 }
@@ -1134,63 +1327,58 @@ function fill_model_db(){
 /* insert values in plugin_ciscotools_modele */
 	db_execute("INSERT INTO plugin_extenddb_model "
 	."(snmp_SysObjectId, oid_model, oid_sn, model) VALUES "
-	."('iso.3.6.1.4.1.9.1.1020','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C3560V2-24TS'),"
-	."('iso.3.6.1.4.1.9.1.1021','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C3560V2-24PS'),"
 	."('iso.3.6.1.4.1.9.1.1041','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','CISCO3945-CHASSIS'),"
+	."('iso.3.6.1.4.1.9.1.1069','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','AIR-CT5508-K9'),"
 	."('iso.3.6.1.4.1.9.1.1069','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','AIR-CT5508'),"
 	."('iso.3.6.1.4.1.9.1.1084','.1.3.6.1.2.1.47.1.1.1.1.13.10','.1.3.6.1.2.1.47.1.1.1.1.11.10','N5K-C5548UP'),"
-	."('iso.3.6.1.4.1.9.1.1208','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C2960S-24PS-L'),"
 	."('iso.3.6.1.4.1.9.1.1208','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C2960X-24PS-L'),"
-	."('iso.3.6.1.4.1.9.1.1315','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C2960CPD-8PT-L'),"
-	."('iso.3.6.1.4.1.9.1.1317','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C3560CG-8PC-S'),"
 	."('iso.3.6.1.4.1.9.1.1378','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C819G-U-K9'),"
 	."('iso.3.6.1.4.1.9.1.1384','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C819HG-U-K9'),"
 	."('iso.3.6.1.4.1.9.1.1470','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','IE-2000-4TC-G-B'),"
+	."('iso.3.6.1.4.1.9.1.1470','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','IE-2000-4TS-G-L'),"
 	."('iso.3.6.1.4.1.9.1.1471','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','IE-2000-4T-G-B'),"
+	."('iso.3.6.1.4.1.9.1.1471','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','IE-2000-4TS-G-B'),"
 	."('iso.3.6.1.4.1.9.1.1473','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','IE-2000-8TC-G-B'),"
+	."('iso.3.6.1.4.1.9.1.1475','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','IE-2000-16TC-G-E'),"
 	."('iso.3.6.1.4.1.9.1.1497','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C819G-4G-G-K9'),"
 	."('iso.3.6.1.4.1.9.1.1730','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','IE-2000-16PTC-G-E'),"
-	."('iso.3.6.1.4.1.9.1.1732','.1.3.6.1.2.1.47.1.1.1.1.13.1000','.1.3.6.1.2.1.47.1.1.1.1.11.1000','WS-C-4500X-32'),"
 	."('iso.3.6.1.4.1.9.1.1732','.1.3.6.1.2.1.47.1.1.1.1.13.1000','.1.3.6.1.2.1.47.1.1.1.1.11.1000','WS-C4500X-32'),"
+	."('iso.3.6.1.4.1.9.1.1732','.1.3.6.1.2.1.47.1.1.1.1.13.1000','.1.3.6.1.2.1.47.1.1.1.1.11.1000','WS-C-4500X-32'),"
 	."('iso.3.6.1.4.1.9.1.1745','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','WS-C3850-24XS-S'),"
+	."('iso.3.6.1.4.1.9.1.1745','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','WS-C3850-24T-S'),"
 	."('iso.3.6.1.4.1.9.1.1747','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','VG204XM'),"
 	."('iso.3.6.1.4.1.9.1.1858','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C891F-K9'),"
 	."('iso.3.6.1.4.1.9.1.2059','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C819G-4G-GA-K9'),"
 	."('iso.3.6.1.4.1.9.1.2059','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','cisco819G-4G'),"
 	."('iso.3.6.1.4.1.9.1.2134','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C3560CX-12PC-S'),"
 	."('iso.3.6.1.4.1.9.1.2277','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C3560CX-12PD-S'),"
+	."('iso.3.6.1.4.1.9.1.2506','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C1111-4PLTEEA'),"
 	."('iso.3.6.1.4.1.9.1.2530','.1.3.6.1.2.1.47.1.1.1.1.13.2','.1.3.6.1.2.1.47.1.1.1.1.11.2','Cisco C9800-40-K9 Chassis'),"
+	."('iso.3.6.1.4.1.9.1.2530','.1.3.6.1.2.1.47.1.1.1.1.13.2','.1.3.6.1.2.1.47.1.1.1.1.11.2','C9800-40-K9'),"
 	."('iso.3.6.1.4.1.9.1.2560','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','IR807G-LTE-GA-K9'),"
 	."('iso.3.6.1.4.1.9.1.2593','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C9500-16X'),"
 	."('iso.3.6.1.4.1.9.1.2661','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','IR1101-K9'),"
-	."('iso.3.6.1.4.1.9.1.2694','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C9200L-24P-4X'),"
+	."('iso.3.6.1.4.1.9.1.2685','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','IE-3300-8T2S'),"
+	."('iso.3.6.1.4.1.9.1.2686','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','IE-3300-8P2S'),"
 	."('iso.3.6.1.4.1.9.1.2694','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C9200L-24P-4G'),"
+	."('iso.3.6.1.4.1.9.1.2694','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C9200L-24P-4X'),"
 	."('iso.3.6.1.4.1.9.1.2694','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C9200L-24P-4G-E'),"
 	."('iso.3.6.1.4.1.9.1.2711','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','C921-4PLTEGB'),"
 	."('iso.3.6.1.4.1.9.1.279','.1.3.6.1.2.1.47.1.1.1.1.2.2','.1.3.6.1.2.1.47.1.1.1.1.11.1','VG200'),"
-	."('iso.3.6.1.4.1.9.1.324','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','WS-C2950-24'),"
-	."('iso.3.6.1.4.1.9.1.516','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C3750G-12S'),"
-	."('iso.3.6.1.4.1.9.1.540','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','WS-C2940-8TT-S'),"
+	."('iso.3.6.1.4.1.9.1.3007','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','IE-3300-8T2X'),"
+	."('iso.3.6.1.4.1.9.1.3008','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','IE-3300-8U2X'),"
 	."('iso.3.6.1.4.1.9.1.558','.1.3.6.1.2.1.47.1.1.1.1.2.2','.1.3.6.1.2.1.47.1.1.1.1.11.1','VG224'),"
-	."('iso.3.6.1.4.1.9.1.563','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C3560-24PS'),"
 	."('iso.3.6.1.4.1.9.1.569','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','CISCO877-K9         Chassis'),"
 	."('iso.3.6.1.4.1.9.1.571','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','CISCO871-K9         Chassis'),"
-	."('iso.3.6.1.4.1.9.1.577','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','2821'),"
-	."('iso.3.6.1.4.1.9.1.578','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','2851'),"
-	."('iso.3.6.1.4.1.9.1.614','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C3560G-24PS-S'),"
-	."('iso.3.6.1.4.1.9.1.614','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C3560G-24PS'),"
-	."('iso.3.6.1.4.1.9.1.633','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C3560-24TS-E'),"
-	."('iso.3.6.1.4.1.9.1.694','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C2960-24TC-L'),"
-	."('iso.3.6.1.4.1.9.1.797','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C3560-8PC'),"
-	."('iso.3.6.1.4.1.9.1.797','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','WS-C3560-8PC-S'),"
 	."('iso.3.6.1.4.1.9.1.837','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','CISCO881'),"
 	."('iso.3.6.1.4.1.9.1.857','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','CISCO891-K9'),"
 	."('iso.3.6.1.4.1.9.1.959','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','IE-3000-8TC'),"
+	."('iso.3.6.1.4.1.9.1.959','.1.3.6.1.2.1.47.1.1.1.1.13.1001','.1.3.6.1.2.1.47.1.1.1.1.11.1001','IE-3000-8TC-E'),"
 	."('iso.3.6.1.4.1.9.12.3.1.3.1062','.1.3.6.1.2.1.47.1.1.1.1.13.10','.1.3.6.1.2.1.47.1.1.1.1.11.10','UCS-FI-6248UP'),"
 	."('iso.3.6.1.4.1.9.12.3.1.3.1084','.1.3.6.1.2.1.47.1.1.1.1.13.10','.1.3.6.1.2.1.47.1.1.1.1.11.10','5548UP'),"
+	."('iso.3.6.1.4.1.9.12.3.1.3.1410','.1.3.6.1.2.1.47.1.1.1.1.13.10','.1.3.6.1.2.1.47.1.1.1.1.11.10','N5K-C5672UP'),"
 	."('iso.3.6.1.4.1.9.12.3.1.3.1410','.1.3.6.1.2.1.47.1.1.1.1.13.10','.1.3.6.1.2.1.47.1.1.1.1.11.10','5672UP'),"
 	."('iso.3.6.1.4.1.9.12.3.1.3.1491','.1.3.6.1.2.1.47.1.1.1.1.13.10','.1.3.6.1.2.1.47.1.1.1.1.11.10','DS-C9148S-K9'),"
-	."('iso.3.6.1.4.1.9.12.3.1.3.1519','.1.3.6.1.2.1.47.1.1.1.1.13.10','.1.3.6.1.2.1.47.1.1.1.1.11.10','Nexus1000VSG'),"
 	."('iso.3.6.1.4.1.9.12.3.1.3.2560','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','IR807-LTE-GA-K9'),"
 	."('iso.3.6.1.4.1.9.12.3.1.3.2684','.1.3.6.1.2.1.47.1.1.1.1.13.1','.1.3.6.1.2.1.47.1.1.1.1.11.1','IE-3200-8P2S'),"
 	."('iso.3.6.1.4.1.9.12.3.1.3.840','.1.3.6.1.2.1.47.1.1.1.1.13.10','.1.3.6.1.2.1.47.1.1.1.1.11.10','Virtual Supervisor Module')"
@@ -1199,29 +1387,35 @@ function fill_model_db(){
 }
 
 function data_export () {
-		// export CSV device list
-		$dbquery = db_fetch_assoc("SELECT host.description as Description, host.hostname as Hostname, plugin_extenddb_host_model.model as Model, plugin_extenddb_host_serial_no.serial_no as Serial_no
-        FROM host
-		INNER JOIN plugin_extenddb_host_model ON plugin_extenddb_host_model.host_id=host.id
-		INNER JOIN plugin_extenddb_host_serial_no ON plugin_extenddb_host_serial_no.host_id=host.id
-		WHERE host.status = '3' AND host.disabled != 'on'
-		AND host.snmp_sysDescr LIKE '%cisco%'
-		AND host.snmp_version>0
-		GROUP BY plugin_extenddb_host_serial_no.serial_no
-        ORDER BY host.id");
+	// export CSV device list
+	$dbquery = db_fetch_assoc("SELECT host.description as Description, host.hostname as Hostname, plugin_extenddb_host_model.model as Model, 
+	plugin_extenddb_host_serial_no.serial_no as Serial_no, host.status
+	FROM host
+	INNER JOIN plugin_extenddb_host_model ON plugin_extenddb_host_model.host_id=host.id
+	INNER JOIN plugin_extenddb_host_serial_no ON plugin_extenddb_host_serial_no.host_id=host.id
+	WHERE host.disabled != 'on'
+	AND host.snmp_sysDescr LIKE '%cisco%'
+	AND host.snmp_version>0
+	GROUP BY plugin_extenddb_host_serial_no.serial_no
+	ORDER BY host.id");
 
-		header('Content-Type: text/csv');
-		header('Content-Disposition: attachment; filename=cacti-devices-type-sn.csv');
-		$stdout = fopen('php://output', 'w');
-	
-		$header = array_keys($dbquery[0]);
-		fputcsv($stdout, $header);
-extdb_log('data_export: header output: '.print_r($header,true));		
+extdb_log('data_export: file export start ');	
+
+	$stdout = fopen('php://output', 'w');
+
+	header('Content-type: application/excel');
+	header('Content-Disposition: attachment; filename=cacti-devices-type-sn.csv');
+
+	if (cacti_sizeof($dbquery)) {
+		$columns = array_keys($dbquery[0]);
+		fputcsv($stdout, $columns);
 
 		foreach($dbquery as $h) {
-			fputcsv($stdout, $h );
+			fputcsv($stdout, $h);
 		}
-		fclose($stdout);
+	}
+
+	fclose($stdout);
 }
 
 function extenddb_device_filters($filters) {

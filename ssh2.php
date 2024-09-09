@@ -74,14 +74,16 @@ function close_ssh($connection) {
     @ssh2_disconnect ($connection);
 }
 
-function ssh_read_stream($stream, $term='#' ) {
+function ssh_read_stream($stream, $term='#', $timeout=210 ) {
+	$oldtimeout = 210;
+	stream_set_timeout($stream, $timeout);
 	$output = '';
 
 	if( $stream == null ) return false;
 	
     do {
 		$stream_out = @fread ($stream, 1);
-//extdb_log('stream read: >'.$stream_out.'<('.strlen($stream_out).')'.' hex:'.bin2hex($stream_out));
+extdb_log('stream read: >'.$stream_out.'<('.strlen($stream_out).')'.' hex:'.bin2hex($stream_out));
 		// Timeout occured
 		if( $stream_out === false ){
 			extdb_log('Timeout on ssh fread');
@@ -96,6 +98,9 @@ function ssh_read_stream($stream, $term='#' ) {
         }
 		
 	} while ( !feof($stream) && $stream_out !== false && $stream_out != $term);
+
+extdb_log('stream read out: '.print_r($output, true));
+	stream_set_timeout($stream, $oldtimeout);
    
     if(strlen($output)!=0) {
         return $output;
@@ -107,11 +112,11 @@ extdb_log('ssh_read_stream - Error - No output');
 
 function ssh_write_stream( $stream, $cmd, $timeout=210){
 	if( $stream == null ) return;
-	$oldtimeout = $timeout;
+	$oldtimeout = 210;
 	stream_set_timeout($stream, $timeout);
 
     do {
-        $write = fwrite( $stream, $cmd.PHP_EOL );
+        $write = fwrite( $stream, $cmd."\r\n" );
 	} while( $write < strlen($cmd) );
 
 extdb_log('ssh_write_stream: '.$cmd .' ('.strlen($cmd).')');
